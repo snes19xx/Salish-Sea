@@ -1,0 +1,22 @@
+# Plan and reference/sample documents
+docs/
+reference/
+
+# GIS data and generated outputs (large, reproducible from tools/)
+data/
+pilot/data/
+
+# Web app build output
+node_modules/
+web/dist/
+
+# Blender scripts and models
+blender/
+
+# Third-party textures
+web/public/textures/
+
+# OS / editor
+.DS_Store
+.vscode/
+__pycache__/
