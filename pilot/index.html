@@ -701,10 +701,11 @@ function updateLabels() {
     const d = L.pos.distanceTo(camera.position);
     _v.copy(L.pos).project(camera);
     const vis = _v.z < 1 && _v.z > -1 && Math.abs(_v.x) < 1.1 && Math.abs(_v.y) < 1.1 && d < L.max;
-    if (!vis) { L.el.style.opacity = 0; continue; }
-    const op = smooth(L.max, L.max * 0.6, d) * smooth(150, 600, d);
-    L.el.style.opacity = op.toFixed(3);
-    L.el.style.transform = `translate(${((_v.x + 1) / 2 * innerWidth).toFixed(1)}px, ${((1 - _v.y) / 2 * innerHeight).toFixed(1)}px) translate(-50%, -100%)`;
+    const op = vis ? (smooth(L.max, L.max * 0.6, d) * smooth(150, 600, d)).toFixed(2) : '0';
+    if (op !== L.op) { L.op = op; L.el.style.opacity = op; }
+    if (op === '0') continue;
+    const tf = `translate(${((_v.x + 1) / 2 * innerWidth).toFixed(1)}px, ${((1 - _v.y) / 2 * innerHeight).toFixed(1)}px) translate(-50%, -100%)`;
+    if (tf !== L.tf) { L.tf = tf; L.el.style.transform = tf; }
   }
 }
 
@@ -856,14 +857,25 @@ function updateSail(dt, time) {
   boat.userData.jibPivot.rotation.y = sail.boom * 0.55;
   waterU.uBoat.value.set(sail.x, sail.z, h, Math.min(1, sail.kn / 6));
   // instruments
-  $('#r-hdg').textContent = `${String(Math.round(sail.hdg) % 360).padStart(3, '0')}° ${compass(sail.hdg)}`;
-  $('#r-spd').textContent = `${sail.kn.toFixed(1)} kn`;
-  $('#r-wind').textContent = `${WIND_KN} kn ${compass(WIND_FROM)}`;
+  if (state.mode !== 'sail') return; // instruments are hidden
+  const hdg = Math.round(sail.hdg) % 360;
+  setText('#r-hdg', `${String(hdg).padStart(3, '0')}° ${compass(sail.hdg)}`);
+  setText('#r-spd', `${sail.kn.toFixed(1)} kn`);
+  setText('#r-wind', `${WIND_KN} kn ${compass(WIND_FROM)}`);
   const dep = -sampleH(sail.x, sail.z);
-  $('#r-dep').textContent = dep >= 299 ? '300+ m' : `${Math.max(0, dep).toFixed(0)} m`;
-  $('#r-pos').textContent = sail.motor ? 'Under power' : pointName(a);
-  $('#rose').setAttribute('transform', `rotate(${-sail.hdg})`);
-  $('#windArrow').setAttribute('transform', `rotate(${WIND_FROM - sail.hdg})`);
+  setText('#r-dep', dep >= 299 ? '300+ m' : `${Math.max(0, dep).toFixed(0)} m`);
+  setText('#r-pos', sail.motor ? 'Under power' : pointName(a));
+  setAttr('#rose', 'transform', `rotate(${-hdg})`);
+  setAttr('#windArrow', 'transform', `rotate(${(WIND_FROM - hdg).toFixed(0)})`);
+}
+// DOM writes only when the value changes (writing every frame forces style and layout work).
+const _dom = new Map();
+function setText(sel, s) { setAttr(sel, null, s); }
+function setAttr(sel, attr, s) {
+  const key = sel + (attr || '');
+  if (_dom.get(key) === s) return;
+  _dom.set(key, s);
+  if (attr) $(sel).setAttribute(attr, s); else $(sel).textContent = s;
 }
 
 /* ---------- modes ---------- */
