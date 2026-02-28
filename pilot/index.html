@@ -12,7 +12,7 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 :root {
-  --glass: rgba(9, 17, 21, 0.58);
+  --glass: rgba(9, 17, 21, 0.74);
   --glass-strong: rgba(9, 17, 21, 0.78);
   --line: rgba(214, 228, 232, 0.16);
   --ink: #e8eff1;
@@ -41,8 +41,8 @@ body {
 .lbl.land::after { content: ""; display: block; width: 1px; height: 14px; margin: 3px auto 0; background: rgba(244,241,232,0.6); }
 
 .panel {
+  /* No backdrop-filter: blurring the live canvas behind every panel costs GPU time each frame. */
   position: fixed; background: var(--glass); border: 1px solid var(--line); border-radius: 10px;
-  backdrop-filter: blur(10px) saturate(1.2); -webkit-backdrop-filter: blur(10px) saturate(1.2);
 }
 .brand {
   top: calc(14px + env(safe-area-inset-top, 0px)); left: calc(14px + env(safe-area-inset-left, 0px));
@@ -278,7 +278,11 @@ async function loadData() {
 
 /* ---------- renderer ---------- */
 const canvas = $('#c');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
+// No logarithmic depth: it writes depth from every fragment shader, which turns off the GPU's
+// early rejection of hidden pixels and doubled the frame time. Each view is instead drawn in two
+// depth ranges (far, then near on a cleared depth buffer); see renderSplit().
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.autoClear = false;
 // Pixel ratio cap: 1.5 by default (?pr= to override); full retina resolution costs far more than it shows.
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, parseFloat(params.get('pr')) || 1.5));
 renderer.setSize(innerWidth, innerHeight);
@@ -288,6 +292,10 @@ renderer.toneMappingExposure = 1.05;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 1.5, 140000);
 const mirrorCam = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 1.5, 140000);
+// Depth split: about 2.5 cm of depth precision at the split distance and a few cm at 20 km.
+const SPLIT = 800;
+const camNear = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 1.5, SPLIT);
+const camFar = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, SPLIT * 0.95, 140000);
 scene.add(camera);
 scene.fog = new THREE.FogExp2(0x8899aa, 5e-5);
 const sunLight = new THREE.DirectionalLight(0xffffff, 1);
@@ -335,7 +343,9 @@ vec3 skyColor(vec3 d){
 /* ---------- sky dome ---------- */
 const skyMat = new THREE.ShaderMaterial({
   uniforms: { ...U },
-  vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  // Pinned to the far plane and drawn last, so the sky is only shaded where nothing else is.
+  vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz;
+    gl_Position = projectionMatrix * viewMatrix * w; gl_Position.z = gl_Position.w; }`,
   fragmentShader: `
     ${GLSL_SKY}${GLSL_NOISE}
     uniform float uTime; uniform float uStars; uniform mat3 uEq; varying vec3 vW;
@@ -400,10 +410,12 @@ const skyMat = new THREE.ShaderMaterial({
       #include <tonemapping_fragment>
       #include <encodings_fragment>
     }`,
-  side: THREE.BackSide, depthTest: false, depthWrite: false
+  side: THREE.BackSide, depthWrite: false
 });
 const dome = new THREE.Mesh(new THREE.SphereGeometry(60000, 48, 24), skyMat);
-dome.renderOrder = -10; dome.frustumCulled = false;
+// Draw order (opaque objects otherwise sort by material id before distance): boat, near terrain,
+// trees, backdrop, water, then sky, so the depth test skips hidden pixels of the expensive shaders.
+dome.renderOrder = 10; dome.frustumCulled = false;
 scene.add(dome);
 
 /* ---------- terrain ----------
@@ -412,16 +424,11 @@ scene.add(dome);
 const makeTerrainMat = hole => new THREE.ShaderMaterial({
   uniforms: { ...U, uHole: { value: hole } },
   vertexShader: `
-    #include <common>
-    #include <logdepthbuf_pars_vertex>
     attribute float cavity; varying vec3 vW; varying vec3 vN; varying float vCav;
     void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vN = normal; vCav = cavity;
       gl_Position = projectionMatrix * viewMatrix * w;
-      #include <logdepthbuf_vertex>
     }`,
   fragmentShader: `
-    #include <common>
-    #include <logdepthbuf_pars_fragment>
     ${GLSL_SKY}${GLSL_NOISE}
     uniform vec3 ambGround; uniform float fogDensity; uniform float uClip; uniform vec4 uHole; uniform float uDetail;
     varying vec3 vW; varying vec3 vN; varying float vCav;
@@ -889,17 +896,36 @@ function renderReflection() {
   mirrorCam.matrixWorldInverse.copy(mirrorCam.matrixWorld).invert();
   textureMatrix.copy(BIAS).multiply(mirrorCam.projectionMatrix).multiply(mirrorCam.matrixWorldInverse);
   water.visible = false; U.uClip.value = 1;
-  renderer.setRenderTarget(reflRT);
-  renderer.render(scene, mirrorCam);
-  renderer.setRenderTarget(null);
+  renderSplit(mirrorCam, reflRT);
   water.visible = true; U.uClip.value = 0;
 }
+
+// Draw a view in two depth ranges so a standard depth buffer has enough precision for 1.5 m to
+// 140 km: everything beyond SPLIT first, then clear depth and draw the near range on top.
+let backdropMesh = null, backdropHole = null;
+function renderSplit(cam, target) {
+  for (const c of [camFar, camNear]) { c.position.copy(cam.position); c.quaternion.copy(cam.quaternion); }
+  renderer.setRenderTarget(target);
+  renderer.clear();
+  renderer.render(scene, camFar);
+  renderer.clearDepth();
+  // The near range never needs the sky, nor the backdrop when the camera is well inside the detail area.
+  const p = cam.position, hb = backdropHole;
+  const skipBack = hb && p.x - hb.x > SPLIT && hb.z - p.x > SPLIT && p.z - hb.y > SPLIT && hb.w - p.z > SPLIT;
+  dome.visible = false;
+  if (backdropMesh && skipBack) backdropMesh.visible = false;
+  renderer.render(scene, camNear);
+  dome.visible = true;
+  if (backdropMesh) backdropMesh.visible = true;
+  renderer.setRenderTarget(null);
+}
+function renderMain() { renderSplit(camera, null); }
 
 function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h);
-  camera.aspect = mirrorCam.aspect = w / h;
-  camera.updateProjectionMatrix(); mirrorCam.updateProjectionMatrix();
+  camera.aspect = mirrorCam.aspect = camNear.aspect = camFar.aspect = w / h;
+  for (const c of [camera, mirrorCam, camNear, camFar]) c.updateProjectionMatrix();
   const pr = renderer.getPixelRatio();
   reflRT.setSize(Math.max(2, Math.floor(w * pr * 0.5)), Math.max(2, Math.floor(h * pr * 0.5)));
 }
@@ -943,6 +969,7 @@ function build() {
   // Detail mesh: ?stride=2 for a lighter mesh. sampleH keeps full resolution.
   const STRIDE = Math.max(1, parseInt(params.get('stride'), 10) || 1);
   const detail = terrainMesh({ nx: NX, nz: NZ, dx: DX, minX: MINX, minZ: MINZ, h: H }, STRIDE, new THREE.Vector4(1, 1, 0, 0));
+  detail.renderOrder = 1;
   scene.add(detail);
   // Backdrop mesh: not drawn inside the detail area (inset by 300 m so the two overlap slightly),
   // and lowered a little under the detail so they never fight for the same pixels.
@@ -950,7 +977,9 @@ function build() {
   const hole = new THREE.Vector4(MINX + inset, MINZ + inset, MAXX - inset, MAXZ - inset);
   const inDetail = (x, z) => x >= MINX - BG.dx && x <= MAXX + BG.dx && z >= MINZ - BG.dx && z <= MAXZ + BG.dx;
   const backdrop = terrainMesh(BG, 1, hole, (x, z, h) => inDetail(x, z) ? h - BACK_DROP : h);
+  backdrop.renderOrder = 3;
   scene.add(backdrop);
+  backdropMesh = backdrop; backdropHole = hole;
 
   const ht = new THREE.DataTexture(HW, NX, NZ, THREE.RedFormat, THREE.FloatType);
   const lin = renderer.extensions.has('OES_texture_float_linear');
@@ -1103,6 +1132,7 @@ async function bakeImpostor(style) {
       rt.scissor.copy(rt.viewport);
       rt.scissorTest = true;
       renderer.setRenderTarget(rt);
+      renderer.clear(); // autoClear is off
       renderer.render(bakeScene, cam);
     }
   }
@@ -1243,7 +1273,7 @@ function frame(now) {
   dome.position.copy(camera.position);
   water.position.set(camera.position.x, 0, camera.position.z);
   renderReflection();
-  renderer.render(scene, camera);
+  renderMain();
   updateLabels();
   requestAnimationFrame(frame);
 }
@@ -1260,13 +1290,13 @@ if (params.has('debug')) window.pilot = {
     // Reading back one pixel forces the GPU to finish the frame (gl.finish() alone does not on ANGLE/Metal).
     const gl = renderer.getContext(), px = new Uint8Array(4);
     const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-    for (let i = 0; i < 5; i++) { renderReflection(); renderer.render(scene, camera); }
+    for (let i = 0; i < 5; i++) { renderReflection(); renderMain(); }
     sync();
     const t0 = performance.now();
-    for (let i = 0; i < frames; i++) { renderReflection(); renderer.render(scene, camera); sync(); }
+    for (let i = 0; i < frames; i++) { renderReflection(); renderMain(); sync(); }
     return +((performance.now() - t0) / frames).toFixed(2);
   },
-  setTrees: on => { for (const o of window.pilot.treeMeshes()) o.visible = on && (!o.userData.isForest || FOREST.some(r => r.front === o)) && treeState.ready; },
+  setTrees: on => { for (const r of FOREST) r.front.visible = on && treeState.ready; },
   treeStyle: name => setTreeStyle(name),
   // Frame intervals over a few seconds of the live loop (catches rebuild hitches the static bench misses).
   frameStats: (ms = 6000) => new Promise(done => {
