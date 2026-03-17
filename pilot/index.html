@@ -349,7 +349,8 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPrefere
 renderer.autoClear = false;
 // Pixel ratio cap: 1.5 by default (?pr= to override); full retina resolution costs far more than it shows.
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, parseFloat(params.get('pr')) || 1.5));
-renderer.setSize(innerWidth, innerHeight);
+const stage = $('#stage'); // the scene fills the area under the masthead
+renderer.setSize(stage.clientWidth, stage.clientHeight);
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
@@ -768,7 +769,7 @@ function updateLabels() {
     const op = vis ? (smooth(L.max, L.max * 0.6, d) * smooth(150, 600, d)).toFixed(2) : '0';
     if (op !== L.op) { L.op = op; L.el.style.opacity = op; }
     if (op === '0') continue;
-    const tf = `translate(${((_v.x + 1) / 2 * innerWidth).toFixed(1)}px, ${((1 - _v.y) / 2 * innerHeight).toFixed(1)}px) translate(-50%, -100%)`;
+    const tf = `translate(${((_v.x + 1) / 2 * stage.clientWidth).toFixed(1)}px, ${((1 - _v.y) / 2 * stage.clientHeight).toFixed(1)}px) translate(-50%, -100%)`;
     if (tf !== L.tf) { L.tf = tf; L.el.style.transform = tf; }
   }
 }
@@ -951,8 +952,8 @@ function setMode(m) {
   $('#inst').hidden = m !== 'sail';
   $('#rudder').hidden = !(m === 'sail' && coarse);
   $('#hint').innerHTML = m === 'sail'
-    ? '<kbd>A</kbd> <kbd>D</kbd> steer &middot; <kbd>E</kbd> motor &middot; drag to orbit &middot; scroll to zoom &middot; time &times;6'
-    : `Drag to look around &middot; the boat waits ${META ? META.boat.where : ''}`;
+    ? '<span><kbd>A</kbd> <kbd>D</kbd> steer</span><span><kbd>E</kbd> motor</span><span>Drag to orbit</span><span>Scroll to zoom</span><span>Time runs 6&times; faster</span>'
+    : `<span>Drag to look around</span><span>Switch to Sail to take the boat ${META ? META.boat.where : ''}</span>`;
   look.yaw = 0; look.pitch = m === 'sail' ? -0.18 : 0;
   camInit = false;
 }
@@ -1045,14 +1046,43 @@ function renderSplit(cam, target) {
 function renderMain() { renderSplit(camera, null); }
 
 function resize() {
-  const w = innerWidth, h = innerHeight;
+  const w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
   renderer.setSize(w, h);
   camera.aspect = mirrorCam.aspect = camNear.aspect = camFar.aspect = w / h;
   for (const c of [camera, mirrorCam, camNear, camFar]) c.updateProjectionMatrix();
   const pr = renderer.getPixelRatio();
   reflRT.setSize(Math.max(2, Math.floor(w * pr * 0.5)), Math.max(2, Math.floor(h * pr * 0.5)));
 }
-addEventListener('resize', resize);
+new ResizeObserver(resize).observe(stage); // window resizes, and the masthead wrapping to two lines
+
+/* ---------- theme (page chrome only; the 3D view is the same in both) ---------- */
+{
+  const btn = $('#b-theme');
+  const show = () => {
+    const dark = document.documentElement.dataset.theme === 'dark';
+    btn.textContent = dark ? 'Light' : 'Dark';
+    btn.setAttribute('aria-pressed', String(dark));
+  };
+  btn.addEventListener('click', () => {
+    const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = t;
+    try { localStorage.setItem('sc-theme', t); } catch (e) {}
+    show();
+  });
+  show();
+}
+
+/* ---------- compass rose ticks: every 10 degrees, longer every 30 ---------- */
+{
+  const rose = $('#rose'), NS = 'http://www.w3.org/2000/svg';
+  for (let a = 0; a < 360; a += 10) {
+    if (a === 0) continue; // north has its own mark
+    const r0 = a % 30 === 0 ? 40 : 43.5, t = a * Math.PI / 180, l = document.createElementNS(NS, 'line');
+    l.setAttribute('x1', (Math.sin(t) * r0).toFixed(2)); l.setAttribute('y1', (-Math.cos(t) * r0).toFixed(2));
+    l.setAttribute('x2', (Math.sin(t) * 47).toFixed(2)); l.setAttribute('y2', (-Math.cos(t) * 47).toFixed(2));
+    rose.appendChild(l);
+  }
+}
 
 /* ---------- build world ---------- */
 // Terrain from a grid, using every stride-th sample, as a group of square tiles (TERRAIN_TILE cells
@@ -1190,9 +1220,11 @@ function build() {
   sail.x = META.boat.x; sail.z = META.boat.z; sail.hdg = META.boat.hdg;
   setWind(META.wind.from, META.wind.kn);
   $('#b-title').textContent = META.title;
-  $('#b-coord').textContent = META.coord;
+  // META.coord reads "lat lon · span"; the masthead uses the span in a sentence.
+  const span = (META.coord.split('·')[1] || '').trim();
+  $('#b-coord').textContent = `${span || META.title} on real elevation and seafloor data. Watch the flyover, or switch to Sail and take the helm.`;
   $('#b-note').textContent = META.note;
-  document.title = `${META.title} · pilot (real data)`;
+  document.title = `${META.title}, Sunshine Coast`;
   setMode(state.mode);
   console.info(`Pilot ${META.area}: detail ${NX} x ${NZ} at ${DX} m, stride ${STRIDE} (${(detail.userData.triangles / 1e6).toFixed(2)} M tris, ${detail.userData.tiles} tiles); ` +
     `backdrop ${BG.nx} x ${BG.nz} at ${BG.dx} m (${(backdrop.userData.triangles / 1e6).toFixed(2)} M tris, ${backdrop.userData.tiles} tiles)`);
