@@ -1,186 +1,250 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Sunshine Coast pilot (real data)</title>
+<title>Howe Sound, Sunshine Coast</title>
+<script>
+  // Theme before first paint: saved choice, else the system setting.
+  try {
+    const t = localStorage.getItem('sc-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Public+Sans:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500&display=swap">
 <style>
-/* Phase 2b pilot: the Sechelt Waters demo running on the real MRDEM + NONNA heightmap.
-   Layout: full-bleed WebGL scene with chart-style instrument panels pinned to the corners. */
-* { box-sizing: border-box; }
-[hidden] { display: none !important; }
+/* Howe Sound pilot. A masthead over the scene, and flat paper panels on it: 1px rules, small
+   radii, no blur or shadows. One accent (Howe Sound's glacial green) marks what is active. */
 :root {
-  --glass: rgba(9, 17, 21, 0.74);
-  --glass-strong: rgba(9, 17, 21, 0.78);
-  --line: rgba(214, 228, 232, 0.16);
-  --ink: #e8eff1;
-  --muted: rgba(220, 232, 236, 0.66);
-  --brass: #e2b35f;
-  --sea: #7fc4c4;
-  --font-display: "DM Serif Display", "Iowan Old Style", Georgia, serif;
-  --font-ui: "Manrope", "Segoe UI", system-ui, sans-serif;
-  --font-data: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --paper: #f5f3ee;
+  --panel: rgba(245, 243, 238, 0.94);
+  --panel-2: #e9e5dc;
+  --ink: #1c2023;
+  --ink2: #595b57;
+  --ink3: #9b988f;
+  --rule: #d2cdc2;
+  --accent: #2f6b64;
+  --display: "Newsreader", Georgia, "Times New Roman", serif;
+  --sans: "Public Sans", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: "Spline Sans Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --paper: #111315;
+  --panel: rgba(17, 19, 21, 0.92);
+  --panel-2: #1d2023;
+  --ink: #e7e4dc;
+  --ink2: #9d9a91;
+  --ink3: #5d5c58;
+  --rule: #2b2e32;
+  --accent: #86b9ae;
   color-scheme: dark;
 }
-html, body { height: 100%; margin: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
 body {
-  background: #0b1418; color: var(--ink); font-family: var(--font-ui);
-  overflow: hidden; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 13px; line-height: 1.5;
+  font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; overflow: hidden;
+  display: flex; flex-direction: column; height: 100dvh;
+  transition: background 0.18s, color 0.18s;
 }
-#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 1px solid var(--ink2); outline-offset: 2px; }
+
+/* ---- masthead ---- */
+.mast {
+  flex: 0 0 auto; display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem 2.5rem; flex-wrap: wrap;
+  padding: 1.05rem max(1.5rem, env(safe-area-inset-right)) 0.75rem max(1.5rem, env(safe-area-inset-left));
+  border-bottom: 1px solid var(--rule);
+}
+.mast h1 { font-family: var(--display); font-weight: 400; font-size: 1.6rem; line-height: 1.05; letter-spacing: -0.005em; }
+.mast .sub { color: var(--ink2); font-size: 0.8rem; max-width: 72ch; margin-top: 0.35rem; }
+.mast .right { align-self: stretch; display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 0.6rem; }
+.tool {
+  font-size: 0.7rem; color: var(--ink2); background: none; border: 1px solid var(--rule); border-radius: 2px;
+  padding: 0.28rem 0.6rem; cursor: pointer; white-space: nowrap; transition: color 0.14s, border-color 0.14s;
+}
+.tool:hover { color: var(--ink); border-color: var(--ink3); }
+.modes { display: flex; gap: 1.1rem; align-items: baseline; }
+.modes button {
+  background: none; border: 0; padding: 0 0 3px; cursor: pointer; font-size: 0.86rem; color: var(--ink3);
+  border-bottom: 1px solid transparent; transition: color 0.14s, border-color 0.14s;
+}
+.modes button:hover { color: var(--ink2); }
+.modes button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+/* ---- scene ---- */
+.stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: #0d1114; }
+#c { position: absolute; inset: 0; display: block; touch-action: none; cursor: grab; }
 #c.dragging { cursor: grabbing; }
-#labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+#labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+/* Place names sit on the 3D view, so they stay light with a soft shadow whatever the theme. */
 .lbl {
   position: absolute; left: 0; top: 0; white-space: nowrap; transform: translate(-50%, -100%);
-  font-family: var(--font-display); font-size: 15px; letter-spacing: 0.04em; color: #f4f1e8;
-  text-shadow: 0 1px 6px rgba(0,0,0,0.55); will-change: transform, opacity;
+  font-family: var(--display); font-size: 15px; letter-spacing: 0.02em; color: #f6f3ea;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 0 10px rgba(0, 0, 0, 0.35); will-change: transform, opacity;
 }
-.lbl.water { font-style: italic; color: #d4ecec; letter-spacing: 0.08em; }
-.lbl.land::after { content: ""; display: block; width: 1px; height: 14px; margin: 3px auto 0; background: rgba(244,241,232,0.6); }
+.lbl.water { font-style: italic; color: #dcebe7; letter-spacing: 0.06em; }
+.lbl.land::after { content: ""; display: block; width: 1px; height: 14px; margin: 3px auto 0; background: rgba(246, 243, 234, 0.55); }
 
-.panel {
-  /* No backdrop-filter: blurring the live canvas behind every panel costs GPU time each frame. */
-  position: fixed; background: var(--glass); border: 1px solid var(--line); border-radius: 10px;
-}
-.brand {
-  top: calc(14px + env(safe-area-inset-top, 0px)); left: calc(14px + env(safe-area-inset-left, 0px));
-  padding: 12px 16px 13px; max-width: min(340px, calc(100vw - 28px));
-}
-.brand h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 30px; line-height: 1; letter-spacing: 0.01em; }
-.brand .coord { margin-top: 6px; font-family: var(--font-data); font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
-.brand .note { margin-top: 8px; font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+.panel { position: absolute; background: var(--panel); border: 1px solid var(--rule); border-radius: 3px; color: var(--ink); }
 
-.modes {
-  top: calc(14px + env(safe-area-inset-top, 0px)); right: calc(14px + env(safe-area-inset-right, 0px));
-  display: flex; gap: 2px; padding: 3px;
+/* Sky and trees: top left of the scene. */
+.sky { top: 14px; left: max(14px, env(safe-area-inset-left)); width: 236px; padding: 0.8rem 0.9rem 0.75rem; display: grid; gap: 0.85rem; }
+.field { display: grid; gap: 0.4rem; }
+.field .row { display: flex; justify-content: space-between; align-items: baseline; }
+.field label, .field .name { font-size: 0.74rem; color: var(--ink2); }
+.clock { font-family: var(--mono); font-size: 0.82rem; color: var(--ink); }
+.seg { display: flex; }
+.seg button {
+  flex: 1; padding: 0.32rem 0; border: 1px solid var(--rule); background: none; font-size: 0.74rem; color: var(--ink2);
+  cursor: pointer; transition: color 0.14s, background 0.14s;
 }
-.modes button {
-  appearance: none; border: 0; background: transparent; color: var(--muted); font: 600 12.5px var(--font-ui);
-  letter-spacing: 0.05em; text-transform: uppercase; padding: 9px 14px; border-radius: 7px; cursor: pointer;
-}
-.modes button[aria-pressed="true"] { background: rgba(226,179,95,0.16); color: var(--brass); }
-.modes button:focus-visible, .sky button:focus-visible, .rudder button:focus-visible, input:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.seg button + button { margin-left: -1px; }
+.seg button:first-child { border-radius: 2px 0 0 2px; }
+.seg button:last-child { border-radius: 0 2px 2px 0; }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { position: relative; background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.credits { font-family: var(--display); font-size: 0.78rem; line-height: 1.45; color: var(--ink2); padding-top: 0.7rem; border-top: 1px solid var(--rule); }
+.credits p + p { margin-top: 0.3rem; }
 
-.sky {
-  left: calc(14px + env(safe-area-inset-left, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-  padding: 12px 14px; width: min(300px, calc(100vw - 28px)); display: grid; gap: 10px;
-}
-.sky .row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.sky label, .eyebrow { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
-.sky .clock { font-family: var(--font-data); font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
-.sky input[type=range] { width: 100%; accent-color: var(--brass); margin: 0; }
-.sky .wx { display: flex; gap: 4px; }
-.sky .wx button {
-  flex: 1; appearance: none; border: 1px solid var(--line); background: transparent; color: var(--muted);
-  font: 500 12px var(--font-ui); padding: 6px 0; border-radius: 6px; cursor: pointer;
-}
-.sky .wx button[aria-pressed="true"] { border-color: rgba(127,196,196,0.6); color: var(--sea); background: rgba(127,196,196,0.1); }
+/* Time slider: a hairline track with a small round handle. */
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 16px; background: none; cursor: pointer; }
+input[type=range]::-webkit-slider-runnable-track { height: 1px; background: var(--ink3); }
+input[type=range]::-moz-range-track { height: 1px; background: var(--ink3); }
+input[type=range]::-moz-range-progress { height: 1px; background: var(--accent); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; margin-top: -5px; border-radius: 50%; background: var(--paper); border: 1px solid var(--ink); }
+input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50%; background: var(--paper); border: 1px solid var(--ink); }
 
-.inst {
-  right: calc(14px + env(safe-area-inset-right, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-  padding: 12px 14px; display: grid; grid-template-columns: 92px auto; gap: 4px 16px; align-items: center;
-}
-.inst svg { grid-row: span 4; width: 92px; height: 92px; }
-.inst .rd { display: grid; gap: 1px; min-width: 0; }
-.inst .rd b { font-family: var(--font-data); font-weight: 500; font-size: 15px; font-variant-numeric: tabular-nums; }
-.inst .pos { grid-column: 1 / -1; margin-top: 4px; font-family: var(--font-display); font-style: italic; font-size: 15px; color: var(--brass); }
+/* Boat instruments: bottom right. The compass rose is the one drawn element on the page. */
+.inst { right: max(14px, env(safe-area-inset-right)); bottom: 14px; padding: 0.85rem 1rem 0.8rem 0.85rem; display: grid; grid-template-columns: 112px auto; gap: 0 1.1rem; align-items: center; }
+.inst svg { width: 112px; height: 112px; color: var(--ink3); }
+.inst .rose-n { fill: var(--accent); }
+.inst .wind { fill: var(--accent); }
+.inst .hull { fill: var(--ink); }
+.inst dl { display: grid; grid-template-columns: auto auto; gap: 0.2rem 0.9rem; align-items: baseline; }
+.inst dt { font-size: 0.72rem; color: var(--ink2); }
+.inst dd { font-family: var(--mono); font-size: 0.86rem; text-align: right; }
+.inst .pos { grid-column: 1 / -1; margin-top: 0.55rem; padding-top: 0.5rem; border-top: 1px solid var(--rule); font-family: var(--display); font-style: italic; font-size: 0.95rem; color: var(--ink); }
 
 .hint {
-  left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-  padding: 8px 14px; font-size: 12px; color: var(--muted); white-space: nowrap;
+  left: 50%; transform: translateX(-50%); bottom: 14px; padding: 0.4rem 0.8rem; font-size: 0.74rem; color: var(--ink2);
+  white-space: nowrap; display: flex; gap: 1.1rem;
 }
-.hint kbd { font-family: var(--font-data); font-size: 11px; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+.hint kbd { font-family: var(--mono); font-size: 0.7rem; color: var(--ink); border: 1px solid var(--rule); border-radius: 2px; padding: 0 0.3rem; }
 
-.rudder { position: fixed; left: 0; right: 0; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); display: flex; justify-content: space-between; padding: 0 max(16px, env(safe-area-inset-left, 0px)) 0 max(16px, env(safe-area-inset-right, 0px)); pointer-events: none; }
+/* Touch steering. */
+.rudder { position: absolute; left: 0; right: 0; bottom: 150px; display: flex; justify-content: space-between; padding: 0 14px; pointer-events: none; }
 .rudder button {
-  pointer-events: auto; width: 68px; height: 68px; border-radius: 50%; border: 1px solid var(--line);
-  background: var(--glass-strong); color: var(--ink); font: 600 22px var(--font-ui); touch-action: none;
+  pointer-events: auto; width: 64px; height: 64px; border-radius: 50%; border: 1px solid var(--rule);
+  background: var(--panel); color: var(--ink); font-size: 22px; touch-action: none;
 }
 .rudder .mid { display: flex; align-items: end; }
-.rudder .mid button { width: auto; height: 40px; border-radius: 20px; padding: 0 16px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+.rudder .mid button { width: auto; height: 36px; border-radius: 2px; padding: 0 0.9rem; font-size: 0.78rem; }
 
-#loader { position: fixed; inset: 0; display: grid; place-items: center; background: #0b1418; z-index: 5; transition: opacity 0.8s ease; }
+#loader { position: absolute; inset: 0; display: grid; place-items: center; background: var(--paper); z-index: 5; transition: opacity 0.6s ease; }
 #loader div { text-align: center; max-width: 520px; padding: 0 20px; }
-#loader h2 { margin: 0 0 8px; font-family: var(--font-display); font-weight: 400; font-size: 34px; }
-#loader p { margin: 0; color: var(--muted); font-size: 13px; letter-spacing: 0.04em; line-height: 1.5; }
+#loader h2 { font-family: var(--display); font-weight: 400; font-size: 1.6rem; margin-bottom: 0.3rem; }
+#loader p { color: var(--ink2); font-size: 0.8rem; }
 #loader.done { opacity: 0; pointer-events: none; }
 
 @media (max-width: 760px) {
-  .brand h1 { font-size: 24px; }
-  .brand .note { display: none; }
+  .mast { padding-top: 0.8rem; padding-bottom: 0.6rem; align-items: center; flex-wrap: nowrap; gap: 1rem; }
+  .mast h1 { font-size: 1.3rem; }
+  .mast .sub { display: none; }
+  .mast .right { flex-direction: row-reverse; align-items: center; align-self: auto; gap: 1rem; }
+  .sky .trees-field { display: none; }
   .hint { display: none; }
-  .modes { top: auto; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); right: calc(14px + env(safe-area-inset-right, 0px)); }
-  .sky { bottom: calc(66px + env(safe-area-inset-bottom, 0px)); width: min(260px, calc(100vw - 28px)); }
-  .inst { top: calc(84px + env(safe-area-inset-top, 0px)); bottom: auto; grid-template-columns: 72px auto; padding: 10px 12px; }
-  .inst svg { width: 72px; height: 72px; }
+  .sky { top: auto; bottom: 14px; width: min(236px, calc(100% - 28px)); }
+  .credits { display: none; }
+  .inst { bottom: auto; top: 14px; grid-template-columns: 76px auto; padding: 0.6rem 0.75rem; }
+  .inst svg { width: 76px; height: 76px; }
 }
-@media (prefers-reduced-motion: reduce) { #loader { transition: none; } }
+@media (prefers-reduced-motion: reduce) { #loader, body { transition: none; } }
 </style>
 </head>
 <body>
 
-<canvas id="c" aria-label="3D view of the Sunshine Coast"></canvas>
-<div id="labels"></div>
-
-<header class="panel brand">
-  <h1 id="b-title">Sunshine Coast</h1>
-  <div class="coord" id="b-coord"></div>
-  <div class="note" id="b-note"></div>
-  <div class="note" id="b-credit"></div>
+<header class="mast">
+  <div>
+    <h1 id="b-title">Howe Sound</h1>
+    <p class="sub" id="b-coord">Horseshoe Bay to Gibsons on real elevation and seafloor data.</p>
+  </div>
+  <div class="right">
+    <button type="button" class="tool" id="b-theme" aria-pressed="false">Dark</button>
+    <nav class="modes" aria-label="View">
+      <button id="mode-fly" type="button" aria-pressed="true">Flyover</button>
+      <button id="mode-sail" type="button" aria-pressed="false">Sail</button>
+    </nav>
+  </div>
 </header>
 
-<nav class="panel modes" aria-label="View mode">
-  <button id="mode-fly" type="button" aria-pressed="true">Flyover</button>
-  <button id="mode-sail" type="button" aria-pressed="false">Sail</button>
-</nav>
+<main class="stage" id="stage">
+  <canvas id="c" aria-label="3D view of Howe Sound"></canvas>
+  <div id="labels"></div>
 
-<section class="panel sky" aria-label="Sky">
-  <div class="row"><label for="tod">Time of day</label><span class="clock" id="clock">19:20</span></div>
-  <input id="tod" type="range" min="0" max="23.95" step="0.05" value="19.33">
-  <div class="wx" id="weather" role="group" aria-label="Weather">
-    <button type="button" id="wx-clear" aria-pressed="true">Clear</button>
-    <button type="button" id="wx-haze" aria-pressed="false">Haze</button>
-    <button type="button" id="wx-over" aria-pressed="false">Overcast</button>
+  <section class="panel sky" aria-label="Sky and trees">
+    <div class="field">
+      <div class="row"><label for="tod">Time of day</label><span class="clock" id="clock">19:20</span></div>
+      <input id="tod" type="range" min="0" max="23.95" step="0.05" value="19.33">
+    </div>
+    <div class="field">
+      <span class="name" id="wx-name">Weather</span>
+      <div class="seg" id="weather" role="group" aria-labelledby="wx-name">
+        <button type="button" id="wx-clear" aria-pressed="true">Clear</button>
+        <button type="button" id="wx-haze" aria-pressed="false">Haze</button>
+        <button type="button" id="wx-over" aria-pressed="false">Overcast</button>
+      </div>
+    </div>
+    <div class="field trees-field">
+      <span class="name" id="trees-name">Trees</span>
+      <div class="seg" id="trees" role="group" aria-labelledby="trees-name">
+        <button type="button" data-style="fir" aria-pressed="false">Fir</button>
+        <button type="button" data-style="spruce" aria-pressed="false">Spruce</button>
+        <button type="button" data-style="stylized" aria-pressed="false">Stylized</button>
+        <button type="button" data-style="off" aria-pressed="false">Off</button>
+      </div>
+    </div>
+    <div class="credits">
+      <p id="b-note"></p>
+      <p id="b-credit"></p>
+    </div>
+  </section>
+
+  <section class="panel inst" id="inst" hidden aria-label="Instruments">
+    <svg viewBox="-50 -50 100 100" aria-hidden="true">
+      <!-- The rose turns with the heading; the hull stays pointing up. Ticks are added by script. -->
+      <g id="rose" fill="none" stroke="currentColor" stroke-width="0.6">
+        <circle r="47"/>
+        <circle r="31" stroke-dasharray="0.6 2.4"/>
+        <path class="rose-n" stroke="none" d="M0 -47 L3 -38 L0 -40 L-3 -38 Z"/>
+        <text y="-28" text-anchor="middle" font-family="Newsreader, Georgia, serif" font-size="8.5" fill="currentColor" stroke="none">N</text>
+      </g>
+      <g id="windArrow"><path class="wind" d="M0 -46 L4.2 -33 L1.1 -34.5 L1.1 -22 L-1.1 -22 L-1.1 -34.5 L-4.2 -33 Z"/></g>
+      <path class="hull" d="M0 -13 C4.5 -6 4.6 5 3.3 11 L-3.3 11 C-4.6 5 -4.5 -6 0 -13 Z"/>
+    </svg>
+    <dl>
+      <dt>Heading</dt><dd id="r-hdg">270&deg; W</dd>
+      <dt>Speed</dt><dd id="r-spd">0.0 kn</dd>
+      <dt>Wind</dt><dd id="r-wind">14 kn WNW</dd>
+      <dt>Depth</dt><dd id="r-dep">&ndash; m</dd>
+    </dl>
+    <p class="pos" id="r-pos">Beam reach</p>
+  </section>
+
+  <div class="panel hint" id="hint"><span>Drag to look around</span></div>
+
+  <div class="rudder" id="rudder" hidden>
+    <button type="button" id="rud-l" aria-label="Steer to port">&#8630;</button>
+    <div class="mid"><button type="button" id="rud-m">Motor off</button></div>
+    <button type="button" id="rud-r" aria-label="Steer to starboard">&#8631;</button>
   </div>
-  <div class="row"><label>Trees</label></div>
-  <div class="wx" id="trees" role="group" aria-label="Tree style">
-    <button type="button" data-style="fir" aria-pressed="false">Fir</button>
-    <button type="button" data-style="spruce" aria-pressed="false">Spruce</button>
-    <button type="button" data-style="stylized" aria-pressed="false">Stylized</button>
-    <button type="button" data-style="off" aria-pressed="false">Off</button>
-  </div>
-</section>
 
-<section class="panel inst" id="inst" hidden aria-label="Instruments">
-  <svg viewBox="-50 -50 100 100" aria-hidden="true">
-    <circle r="46" fill="none" stroke="rgba(214,228,232,0.25)" stroke-width="1"/>
-    <g id="rose">
-      <text y="-34" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#e2b35f">N</text>
-      <text x="36" y="3.5" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="rgba(232,239,241,0.6)">E</text>
-      <text y="41" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="rgba(232,239,241,0.6)">S</text>
-      <text x="-36" y="3.5" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="rgba(232,239,241,0.6)">W</text>
-    </g>
-    <g id="windArrow"><path d="M0 -44 L5 -30 L1.5 -31 L1.5 -18 L-1.5 -18 L-1.5 -31 L-5 -30 Z" fill="#7fc4c4"/></g>
-    <path d="M0 -14 C5 -6 5 6 3.5 12 L-3.5 12 C-5 6 -5 -6 0 -14 Z" fill="#e8eff1"/>
-  </svg>
-  <div class="rd"><span class="eyebrow">Heading</span><b id="r-hdg">270&deg; W</b></div>
-  <div class="rd"><span class="eyebrow">Speed</span><b id="r-spd">0.0 kn</b></div>
-  <div class="rd"><span class="eyebrow">Wind</span><b id="r-wind">14 kn WNW</b></div>
-  <div class="rd"><span class="eyebrow">Depth</span><b id="r-dep">-- m</b></div>
-  <div class="pos" id="r-pos">Beam reach</div>
-</section>
-
-<div class="panel hint" id="hint">Drag to look around</div>
-
-<div class="rudder" id="rudder" hidden>
-  <button type="button" id="rud-l" aria-label="Steer to port">&#8630;</button>
-  <div class="mid"><button type="button" id="rud-m">Motor off</button></div>
-  <button type="button" id="rud-r" aria-label="Steer to starboard">&#8631;</button>
-</div>
-
-<div id="loader"><div><h2>Sunshine Coast</h2><p id="load-msg">Loading the coastline&hellip;</p></div></div>
+  <div id="loader"><div><h2>Howe Sound</h2><p id="load-msg">Loading the coastline&hellip;</p></div></div>
+</main>
 
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/"}}</script>
 <script type="module">
