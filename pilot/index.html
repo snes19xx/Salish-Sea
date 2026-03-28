@@ -1,21 +1,14 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Howe Sound, Sunshine Coast</title>
-<script>
-  // Theme before first paint: saved choice, else the system setting.
-  try {
-    const t = localStorage.getItem('sc-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    document.documentElement.dataset.theme = t;
-  } catch (e) {}
-</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Public+Sans:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500&display=swap">
 <style>
-/* Howe Sound pilot. A masthead over the scene, and flat paper panels on it: 1px rules, small
+/* Howe Sound pilot. The scene fills the window; flat paper panels sit on it: 1px rules, small
    radii, no blur or shadows. One accent (Howe Sound's glacial green) marks what is active. */
 :root {
   --paper: #f5f3ee;
@@ -31,17 +24,6 @@
   --mono: "Spline Sans Mono", ui-monospace, "SF Mono", Menlo, monospace;
   color-scheme: light;
 }
-:root[data-theme="dark"] {
-  --paper: #111315;
-  --panel: rgba(17, 19, 21, 0.92);
-  --panel-2: #1d2023;
-  --ink: #e7e4dc;
-  --ink2: #9d9a91;
-  --ink3: #5d5c58;
-  --rule: #2b2e32;
-  --accent: #86b9ae;
-  color-scheme: dark;
-}
 * { box-sizing: border-box; margin: 0; padding: 0; }
 [hidden] { display: none !important; }
 html, body { height: 100%; }
@@ -49,39 +31,33 @@ body {
   background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 13px; line-height: 1.5;
   font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; overflow: hidden;
   display: flex; flex-direction: column; height: 100dvh;
-  transition: background 0.18s, color 0.18s;
 }
 button { font: inherit; color: inherit; }
 :focus-visible { outline: 1px solid var(--ink2); outline-offset: 2px; }
 
-/* ---- masthead ---- */
+/* ---- masthead: one line ---- */
 .mast {
-  flex: 0 0 auto; display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem 2.5rem; flex-wrap: wrap;
-  padding: 1.05rem max(1.5rem, env(safe-area-inset-right)) 0.75rem max(1.5rem, env(safe-area-inset-left));
+  flex: 0 0 auto; display: flex; justify-content: space-between; align-items: baseline; gap: 1.5rem;
+  padding: 0.55rem max(1.25rem, env(safe-area-inset-right)) 0.5rem max(1.25rem, env(safe-area-inset-left));
   border-bottom: 1px solid var(--rule);
 }
-.mast h1 { font-family: var(--display); font-weight: 400; font-size: 1.6rem; line-height: 1.05; letter-spacing: -0.005em; }
-.mast .sub { color: var(--ink2); font-size: 0.8rem; max-width: 72ch; margin-top: 0.35rem; }
-.mast .right { align-self: stretch; display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 0.6rem; }
-.tool {
-  font-size: 0.7rem; color: var(--ink2); background: none; border: 1px solid var(--rule); border-radius: 2px;
-  padding: 0.28rem 0.6rem; cursor: pointer; white-space: nowrap; transition: color 0.14s, border-color 0.14s;
-}
-.tool:hover { color: var(--ink); border-color: var(--ink3); }
-.modes { display: flex; gap: 1.1rem; align-items: baseline; }
+.mast .id { display: flex; align-items: baseline; gap: 1rem; min-width: 0; }
+.mast h1 { font-family: var(--display); font-weight: 400; font-size: 1.3rem; line-height: 1.1; letter-spacing: -0.005em; white-space: nowrap; }
+.mast .sub { color: var(--ink2); font-size: 0.76rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.modes { display: flex; gap: 1rem; align-items: baseline; }
 .modes button {
-  background: none; border: 0; padding: 0 0 3px; cursor: pointer; font-size: 0.86rem; color: var(--ink3);
+  background: none; border: 0; padding: 0 0 2px; cursor: pointer; font-size: 0.82rem; color: var(--ink3);
   border-bottom: 1px solid transparent; transition: color 0.14s, border-color 0.14s;
 }
 .modes button:hover { color: var(--ink2); }
 .modes button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--accent); }
 
-/* ---- scene ---- */
+/* ---- scene: everything under the masthead ---- */
 .stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: #0d1114; }
 #c { position: absolute; inset: 0; display: block; touch-action: none; cursor: grab; }
 #c.dragging { cursor: grabbing; }
 #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-/* Place names sit on the 3D view, so they stay light with a soft shadow whatever the theme. */
+/* Place names sit on the 3D view: light text with a soft shadow. */
 .lbl {
   position: absolute; left: 0; top: 0; white-space: nowrap; transform: translate(-50%, -100%);
   font-family: var(--display); font-size: 15px; letter-spacing: 0.02em; color: #f6f3ea;
@@ -92,15 +68,21 @@ button { font: inherit; color: inherit; }
 
 .panel { position: absolute; background: var(--panel); border: 1px solid var(--rule); border-radius: 3px; color: var(--ink); }
 
-/* Sky and trees: top left of the scene. */
-.sky { top: 14px; left: max(14px, env(safe-area-inset-left)); width: 236px; padding: 0.8rem 0.9rem 0.75rem; display: grid; gap: 0.85rem; }
-.field { display: grid; gap: 0.4rem; }
+/* Time, weather, trees, labels and sources: one low strip along the bottom left, fields side by
+   side. In Sail mode it stops short of the instrument panel and wraps instead of running under it. */
+.sky {
+  bottom: 14px; left: max(14px, env(safe-area-inset-left)); max-width: min(880px, calc(100% - 28px));
+  padding: 0.6rem 0.9rem 0.55rem; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.55rem 1.5rem;
+}
+.stage.sailing .sky { max-width: min(880px, calc(100% - 28px - 340px)); }
+.field { display: grid; gap: 0.3rem; }
+.field.time { width: 190px; }
 .field .row { display: flex; justify-content: space-between; align-items: baseline; }
 .field label, .field .name { font-size: 0.74rem; color: var(--ink2); }
 .clock { font-family: var(--mono); font-size: 0.82rem; color: var(--ink); }
 .seg { display: flex; }
 .seg button {
-  flex: 1; padding: 0.32rem 0; border: 1px solid var(--rule); background: none; font-size: 0.74rem; color: var(--ink2);
+  flex: 1; padding: 0.32rem 0.7rem; border: 1px solid var(--rule); background: none; font-size: 0.74rem; color: var(--ink2);
   cursor: pointer; transition: color 0.14s, background 0.14s;
 }
 .seg button + button { margin-left: -1px; }
@@ -108,8 +90,10 @@ button { font: inherit; color: inherit; }
 .seg button:last-child { border-radius: 0 2px 2px 0; }
 .seg button:hover { color: var(--ink); }
 .seg button[aria-pressed="true"] { position: relative; background: var(--ink); border-color: var(--ink); color: var(--paper); }
-.credits { font-family: var(--display); font-size: 0.78rem; line-height: 1.45; color: var(--ink2); padding-top: 0.7rem; border-top: 1px solid var(--rule); }
-.credits p + p { margin-top: 0.3rem; }
+.credits { flex-basis: 100%; font-family: var(--display); font-size: 0.74rem; line-height: 1.4; color: var(--ink2); padding-top: 0.45rem; border-top: 1px solid var(--rule); }
+.credits p { display: inline; }
+.credits p + p::before { content: " "; }
+.credits p:empty { display: none; }
 
 /* Time slider: a hairline track with a small round handle. */
 input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 16px; background: none; cursor: pointer; }
@@ -131,7 +115,7 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
 .inst .pos { grid-column: 1 / -1; margin-top: 0.55rem; padding-top: 0.5rem; border-top: 1px solid var(--rule); font-family: var(--display); font-style: italic; font-size: 0.95rem; color: var(--ink); }
 
 .hint {
-  left: 50%; transform: translateX(-50%); bottom: 14px; padding: 0.4rem 0.8rem; font-size: 0.74rem; color: var(--ink2);
+  left: 50%; transform: translateX(-50%); top: 14px; padding: 0.4rem 0.8rem; font-size: 0.74rem; color: var(--ink2);
   white-space: nowrap; display: flex; gap: 1.1rem;
 }
 .hint kbd { font-family: var(--mono); font-size: 0.7rem; color: var(--ink); border: 1px solid var(--rule); border-radius: 2px; padding: 0 0.3rem; }
@@ -152,42 +136,38 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
 #loader.done { opacity: 0; pointer-events: none; }
 
 @media (max-width: 760px) {
-  .mast { padding-top: 0.8rem; padding-bottom: 0.6rem; align-items: center; flex-wrap: nowrap; gap: 1rem; }
-  .mast h1 { font-size: 1.3rem; }
-  .mast .sub { display: none; }
-  .mast .right { flex-direction: row-reverse; align-items: center; align-self: auto; gap: 1rem; }
   .sky .trees-field { display: none; }
+  .stage.sailing .sky { max-width: calc(100% - 28px); }
+  .mast .sub { display: none; }
   .hint { display: none; }
-  .sky { top: auto; bottom: 14px; width: min(236px, calc(100% - 28px)); }
+  .sky { gap: 0.55rem 1rem; }
+  .field.time { width: 100%; }
   .credits { display: none; }
   .inst { bottom: auto; top: 14px; grid-template-columns: 76px auto; padding: 0.6rem 0.75rem; }
   .inst svg { width: 76px; height: 76px; }
 }
-@media (prefers-reduced-motion: reduce) { #loader, body { transition: none; } }
+@media (prefers-reduced-motion: reduce) { #loader { transition: none; } }
 </style>
 </head>
 <body>
 
 <header class="mast">
-  <div>
+  <div class="id">
     <h1 id="b-title">Howe Sound</h1>
-    <p class="sub" id="b-coord">Horseshoe Bay to Gibsons on real elevation and seafloor data.</p>
+    <p class="sub" id="b-sub">Horseshoe Bay to Gibsons on real elevation and seafloor data</p>
   </div>
-  <div class="right">
-    <button type="button" class="tool" id="b-theme" aria-pressed="false">Dark</button>
-    <nav class="modes" aria-label="View">
-      <button id="mode-fly" type="button" aria-pressed="true">Flyover</button>
-      <button id="mode-sail" type="button" aria-pressed="false">Sail</button>
-    </nav>
-  </div>
+  <nav class="modes" aria-label="View">
+    <button id="mode-fly" type="button" aria-pressed="true">Flyover</button>
+    <button id="mode-sail" type="button" aria-pressed="false">Sail</button>
+  </nav>
 </header>
 
 <main class="stage" id="stage">
   <canvas id="c" aria-label="3D view of Howe Sound"></canvas>
   <div id="labels"></div>
 
-  <section class="panel sky" aria-label="Sky and trees">
-    <div class="field">
+  <section class="panel sky" aria-label="Controls">
+    <div class="field time">
       <div class="row"><label for="tod">Time of day</label><span class="clock" id="clock">19:20</span></div>
       <input id="tod" type="range" min="0" max="23.95" step="0.05" value="19.33">
     </div>
@@ -206,6 +186,13 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
         <button type="button" data-style="spruce" aria-pressed="false">Spruce</button>
         <button type="button" data-style="stylized" aria-pressed="false">Stylized</button>
         <button type="button" data-style="off" aria-pressed="false">Off</button>
+      </div>
+    </div>
+    <div class="field">
+      <span class="name" id="labels-name">Labels</span>
+      <div class="seg" id="label-toggle" role="group" aria-labelledby="labels-name">
+        <button type="button" data-labels="on" aria-pressed="true">On</button>
+        <button type="button" data-labels="off" aria-pressed="false">Off</button>
       </div>
     </div>
     <div class="credits">
@@ -235,7 +222,7 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
     <p class="pos" id="r-pos">Beam reach</p>
   </section>
 
-  <div class="panel hint" id="hint"><span>Drag to look around</span></div>
+  <div class="panel hint" id="hint" hidden><span><kbd>A</kbd> <kbd>D</kbd> steer</span><span><kbd>E</kbd> motor</span><span>Drag to orbit</span><span>Scroll to zoom</span><span>Time runs 6&times; faster</span></div>
 
   <div class="rudder" id="rudder" hidden>
     <button type="button" id="rud-l" aria-label="Steer to port">&#8630;</button>
@@ -349,7 +336,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPrefere
 renderer.autoClear = false;
 // Pixel ratio cap: 1.5 by default (?pr= to override); full retina resolution costs far more than it shows.
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, parseFloat(params.get('pr')) || 1.5));
-const stage = $('#stage'); // the scene fills the area under the masthead
+const stage = $('#stage'); // the scene fills everything under the masthead
 renderer.setSize(stage.clientWidth, stage.clientHeight);
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -761,7 +748,9 @@ function makeLabels(list) {
   });
 }
 const _v = new THREE.Vector3();
+let labelsOn = true;
 function updateLabels() {
+  if (!labelsOn) return;
   for (const L of LABELS) {
     const d = L.pos.distanceTo(camera.position);
     _v.copy(L.pos).project(camera);
@@ -775,6 +764,13 @@ function updateLabels() {
 }
 
 /* ---------- sky state ---------- */
+// Place names on or off.
+document.querySelectorAll('#label-toggle button').forEach(b => b.addEventListener('click', () => {
+  labelsOn = b.dataset.labels === 'on';
+  $('#labels').hidden = !labelsOn;
+  document.querySelectorAll('#label-toggle button').forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+}));
+
 const state = { hour: 19.33, weather: 'clear', mode: 'fly' };
 const WEATHER = {
   clear: { fog: 4.2e-5, over: 0, waves: 0.9, stars: 1 },
@@ -951,9 +947,8 @@ function setMode(m) {
   $('#mode-sail').setAttribute('aria-pressed', String(m === 'sail'));
   $('#inst').hidden = m !== 'sail';
   $('#rudder').hidden = !(m === 'sail' && coarse);
-  $('#hint').innerHTML = m === 'sail'
-    ? '<span><kbd>A</kbd> <kbd>D</kbd> steer</span><span><kbd>E</kbd> motor</span><span>Drag to orbit</span><span>Scroll to zoom</span><span>Time runs 6&times; faster</span>'
-    : `<span>Drag to look around</span><span>Switch to Sail to take the boat ${META ? META.boat.where : ''}</span>`;
+  $('#hint').hidden = m !== 'sail'; // only the sailing keys need explaining
+  stage.classList.toggle('sailing', m === 'sail');
   look.yaw = 0; look.pitch = m === 'sail' ? -0.18 : 0;
   camInit = false;
 }
@@ -1055,22 +1050,6 @@ function resize() {
 }
 new ResizeObserver(resize).observe(stage); // window resizes, and the masthead wrapping to two lines
 
-/* ---------- theme (page chrome only; the 3D view is the same in both) ---------- */
-{
-  const btn = $('#b-theme');
-  const show = () => {
-    const dark = document.documentElement.dataset.theme === 'dark';
-    btn.textContent = dark ? 'Light' : 'Dark';
-    btn.setAttribute('aria-pressed', String(dark));
-  };
-  btn.addEventListener('click', () => {
-    const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = t;
-    try { localStorage.setItem('sc-theme', t); } catch (e) {}
-    show();
-  });
-  show();
-}
 
 /* ---------- compass rose ticks: every 10 degrees, longer every 30 ---------- */
 {
@@ -1220,9 +1199,8 @@ function build() {
   sail.x = META.boat.x; sail.z = META.boat.z; sail.hdg = META.boat.hdg;
   setWind(META.wind.from, META.wind.kn);
   $('#b-title').textContent = META.title;
-  // META.coord reads "lat lon · span"; the masthead uses the span in a sentence.
-  const span = (META.coord.split('·')[1] || '').trim();
-  $('#b-coord').textContent = `${span || META.title} on real elevation and seafloor data. Watch the flyover, or switch to Sail and take the helm.`;
+  const span = (META.coord.split('·')[1] || '').trim(); // META.coord reads "lat lon · span"
+  if (span) $('#b-sub').textContent = `${span} on real elevation and seafloor data`;
   $('#b-note').textContent = META.note;
   document.title = `${META.title}, Sunshine Coast`;
   setMode(state.mode);
