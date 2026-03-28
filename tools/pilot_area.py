@@ -83,7 +83,7 @@ AREAS = {
         name="howe",
         title="Howe Sound",
         coord="49.3750° N  123.2730° W · Horseshoe Bay to Gibsons",
-        note="Real terrain: NRCan MRDEM 30 m elevation and CHS NONNA bathymetry "
+        note="Source: NRCan MRDEM 30 m elevation, CHS NONNA bathymetry "
              "(not for navigation), OpenStreetMap coastline.",
         bounds=(-123.56, 49.33, -123.10, 49.55),
         origin=(-123.39, 49.40),
@@ -132,8 +132,8 @@ AREAS = {
         name="sechelt",
         title="Sechelt",
         coord="49.4742° N  123.7545° W · Sunshine Coast, BC",
-        note="Real terrain, Halfmoon Bay to Gibsons: NRCan MRDEM 30 m elevation and CHS NONNA "
-             "bathymetry (not for navigation), OpenStreetMap coastline.",
+        note="Source: NRCan MRDEM 30 m elevation, CHS NONNA bathymetry "
+             "(not for navigation), OpenStreetMap coastline.",
         bounds=(-123.97, 49.35, -123.42, 49.62),
         origin=(-123.7545, 49.4742),
         backdrop=(-124.35, 49.15, -123.05, 49.90),
