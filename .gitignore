@@ -9,6 +9,8 @@ pilot/data/
 # Web app build output
 node_modules/
 web/dist/
+tools/bench/out/
+tools/bench/package-lock.json
 
 # Blender scripts and models
 blender/

@@ -1,0 +1,9 @@
+{
+  "name": "howe-sound-bench",
+  "private": true,
+  "type": "module",
+  "description": "Drives the pilot in a real Firefox window to measure frame time and take screenshots.",
+  "dependencies": {
+    "puppeteer-core": "^23.11.1"
+  }
+}
