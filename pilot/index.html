@@ -128,7 +128,7 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
   pointer-events: auto; width: 64px; height: 64px; border-radius: 50%; border: 1px solid var(--rule);
   background: var(--panel); color: var(--ink); font-size: 22px; touch-action: none;
 }
-.rudder .mid { display: flex; align-items: end; }
+.rudder .mid { display: flex; align-items: end; gap: 0.5rem; }
 .rudder .mid button { width: auto; height: 36px; border-radius: 2px; padding: 0 0.9rem; font-size: 0.78rem; }
 
 #loader { position: absolute; inset: 0; display: grid; place-items: center; background: var(--paper); z-index: 5; transition: opacity 0.6s ease; }
@@ -228,11 +228,11 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
     <p class="pos" id="r-pos">Beam reach</p>
   </section>
 
-  <div class="panel hint" id="hint" hidden><span><kbd>A</kbd> <kbd>D</kbd> steer</span><span><kbd>E</kbd> motor</span><span>Drag to orbit</span><span>Scroll to zoom</span><span>Time runs 6&times; faster</span></div>
+  <div class="panel hint" id="hint" hidden><span><kbd>A</kbd> <kbd>D</kbd> steer</span><span><kbd>E</kbd> motor</span><span><kbd>B</kbd> hold to boost</span><span>Drag to orbit</span><span>Scroll to zoom</span><span>Time runs 6&times; faster</span></div>
 
   <div class="rudder" id="rudder" hidden>
     <button type="button" id="rud-l" aria-label="Steer to port">&#8630;</button>
-    <div class="mid"><button type="button" id="rud-m">Motor off</button></div>
+    <div class="mid"><button type="button" id="rud-m">Motor off</button><button type="button" id="rud-b">Boost</button></div>
     <button type="button" id="rud-r" aria-label="Steer to starboard">&#8631;</button>
   </div>
 
@@ -869,8 +869,8 @@ canvas.addEventListener('pointermove', e => {
 const endDrag = () => { look.dragging = false; canvas.classList.remove('dragging'); };
 canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
 canvas.addEventListener('wheel', e => { e.preventDefault(); look.dist = Math.max(12, Math.min(160, look.dist * (1 + Math.sign(e.deltaY) * 0.1))); }, { passive: false });
-const touchSteer = { l: false, r: false };
-for (const [id, k] of [['#rud-l', 'l'], ['#rud-r', 'r']]) {
+const touchSteer = { l: false, r: false, boost: false };
+for (const [id, k] of [['#rud-l', 'l'], ['#rud-r', 'r'], ['#rud-b', 'boost']]) {
   const b = $(id);
   b.addEventListener('pointerdown', e => { e.preventDefault(); touchSteer[k] = true; });
   for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => { touchSteer[k] = false; });
@@ -879,6 +879,7 @@ $('#rud-m').addEventListener('click', () => toggleMotor());
 
 /* ---------- sailing ---------- */
 const TIMEX = 6;
+const BOOST_KN = 30; // hold B: surge to this speed, then settle back when released
 let WIND_FROM = 292, WIND_KN = 14; // set per area from pilot_height.json
 const sail = { x: 0, z: 1650, hdg: 262, kn: 0, motor: false, boom: 0.3, heel: 0 };
 const POINTS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
@@ -901,8 +902,10 @@ setWind(WIND_FROM, WIND_KN);
 function updateSail(dt, time) {
   const steer = ((keys.a || keys.arrowleft || touchSteer.l) ? -1 : 0) + ((keys.d || keys.arrowright || touchSteer.r) ? 1 : 0);
   const rel = angDiff(sail.hdg, WIND_FROM), a = Math.abs(rel);
-  const target = sail.motor ? 6 : polar(a) * WIND_KN * 0.56;
-  sail.kn += (target - sail.kn) * Math.min(1, dt * 0.35);
+  sail.boost = state.mode === 'sail' && !!(keys.b || touchSteer.boost);
+  const target = sail.boost ? BOOST_KN : sail.motor ? 6 : polar(a) * WIND_KN * 0.56;
+  // Boost picks up quickly; everything else (and coming off boost) eases as before.
+  sail.kn += (target - sail.kn) * Math.min(1, dt * (sail.boost ? 1.2 : 0.35));
   sail.hdg += steer * dt * 26 * Math.max(0.35, Math.min(1, sail.kn / 3.5));
   sail.hdg = (sail.hdg + 360) % 360;
   const h = THREE.MathUtils.degToRad(sail.hdg);
@@ -922,7 +925,7 @@ function updateSail(dt, time) {
   boat.rotation.z = -sail.heel + 0.02 * Math.sin(time * 0.9);
   boat.userData.rig.rotation.y = sail.boom;
   boat.userData.jibPivot.rotation.y = sail.boom * 0.55;
-  waterU.uBoat.value.set(sail.x, sail.z, h, Math.min(1, sail.kn / 6));
+  waterU.uBoat.value.set(sail.x, sail.z, h, Math.min(1.5, sail.kn / 6)); // a heavier wake at boost speed
   // instruments
   if (state.mode !== 'sail') return; // instruments are hidden
   const hdg = Math.round(sail.hdg) % 360;
@@ -931,7 +934,7 @@ function updateSail(dt, time) {
   setText('#r-wind', `${WIND_KN} kn ${compass(WIND_FROM)}`);
   const dep = -sampleH(sail.x, sail.z);
   setText('#r-dep', dep >= 299 ? '300+ m' : `${Math.max(0, dep).toFixed(0)} m`);
-  setText('#r-pos', sail.motor ? 'Under power' : pointName(a));
+  setText('#r-pos', sail.boost ? 'Boost' : sail.motor ? 'Under power' : pointName(a));
   setAttr('#rose', 'transform', `rotate(${-hdg})`);
   setAttr('#windArrow', 'transform', `rotate(${(WIND_FROM - hdg).toFixed(0)})`);
 }
