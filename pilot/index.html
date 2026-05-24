@@ -187,9 +187,10 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
     <div class="field trees-field">
       <span class="name" id="trees-name">Trees</span>
       <div class="seg" id="trees" role="group" aria-labelledby="trees-name">
+        <button type="button" data-style="mixed" aria-pressed="false">Mixed</button>
         <button type="button" data-style="fir" aria-pressed="false">Fir</button>
-        <button type="button" data-style="spruce" aria-pressed="false">Spruce</button>
-        <button type="button" data-style="stylized" aria-pressed="false">Stylized</button>
+        <button type="button" data-style="cedar" aria-pressed="false">Cedar</button>
+        <button type="button" data-style="hemlock" aria-pressed="false">Hemlock</button>
         <button type="button" data-style="off" aria-pressed="false">Off</button>
       </div>
     </div>
@@ -1206,7 +1207,7 @@ function build() {
 
   buildForest();
   document.querySelectorAll('#trees button').forEach(b => b.addEventListener('click', () => setTreeStyle(b.dataset.style)));
-  setTreeStyle(params.get('trees') || 'fir'); // bakes in the background; trees appear when ready
+  setTreeStyle(params.get('trees') || 'mixed'); // bakes in the background; trees appear when ready
 
   makeLabels(META.labels);
   buildPath(META.flyover);
@@ -1232,14 +1233,13 @@ function build() {
    Each ring fades in and out by the live camera distance, in the vertex shader: every tree has a
    random threshold and shrinks away as the ring's weight drops below it. A rebuild only has to
    cover a margin beyond the ring, so swapping buffers doesn't make trees pop. */
-// Demo stand-ins from reference/trees (git-ignored, CC BY 4.0) to compare styles; final trees come from Blender.
-const TREE_DIR = '../reference/trees/';
-const TREE_STYLES = {
-  fir: { file: 'pine_tree(1).glb', label: 'Fir', credit: '"Pine Tree" by EmreAlkan', tint: [1.0, 1.0, 1.0] },
-  spruce: { file: 'pine_tree.glb', label: 'Spruce', credit: '"Pine tree" by Andriy Shekh', tint: [0.42, 0.62, 0.5] },
-  stylized: { file: 'stylized_pine(1).glb', label: 'Stylized', credit: '"Stylized Pine" by BiscuitEater', tint: [1.0, 1.0, 1.0] }
-};
-const IMP = { views: 8, fw: 256, fh: 512 };
+// Conifers, baked into one atlas with one row per species, so a mixed forest is still one
+// draw call per ring.
+const TREE_DIR = '../blender/out/trees/models/';
+const SPECIES = ['douglas_fir', 'western_red_cedar', 'western_hemlock']; // atlas rows 0, 1, 2
+// Tree switch: 'mixed' picks each tree's species from its cell; the others show one species everywhere.
+const TREE_STYLES = { mixed: -1, fir: 0, cedar: 1, hemlock: 2 };
+const IMP = { views: 8, fw: 256, fh: 512, rows: SPECIES.length };
 // band: the ring's weight fades in over [band.x, band.y] metres and out over [band.z, band.w].
 const FOREST = [
   { name: 'near', cell: 7, cap: 60000, every: 120, salt: 11, band: [-2, -1, 530, 650] },
@@ -1257,18 +1257,18 @@ for (const ring of FOREST) {
 }
 const FOREST_BUDGET_MS = 2; // per frame, shared by all ring rebuilds
 const treeU = {
-  tAlbedo: { value: null }, tNormal: { value: null }, uViews: { value: IMP.views },
-  uAtlas: { value: new THREE.Vector2(IMP.fw * IMP.views, IMP.fh) }, uAspect: { value: 0.5 },
-  uTint: { value: new THREE.Vector3(1, 1, 1) }
+  tAlbedo: { value: null }, tNormal: { value: null }, uViews: { value: IMP.views }, uRows: { value: IMP.rows },
+  uAtlas: { value: new THREE.Vector2(IMP.fw * IMP.views, IMP.fh * IMP.rows) }, uAspect: { value: 0.5 },
+  uSpecies: { value: -1 } // -1: each tree's own species; 0-2: that species everywhere
 };
 // One material per ring (for its fade band); the other uniforms are shared.
 const makeTreeMat = band => new THREE.ShaderMaterial({
   uniforms: { ...U, ...treeU, uBand: { value: new THREE.Vector4(...band) } },
   side: THREE.DoubleSide,
   vertexShader: `
-    attribute vec3 iPos; attribute vec2 iSize; attribute vec3 iMisc; // position; height, width factor; yaw, shade, threshold
-    uniform float uViews; uniform float uAspect; uniform vec4 uBand;
-    varying vec2 vUv0; varying vec2 vUv1; varying float vMix; varying vec3 vW; varying vec3 vRight; varying vec3 vToCam; varying float vShade;
+    attribute vec3 iPos; attribute vec3 iSize; attribute vec3 iMisc; // position; height, width factor, species; yaw, shade, threshold
+    uniform float uViews; uniform float uRows; uniform float uAspect; uniform vec4 uBand; uniform float uSpecies;
+    varying vec2 vUv0; varying vec2 vUv1; varying float vMix; varying float vY; varying vec3 vW; varying vec3 vRight; varying vec3 vToCam; varying float vShade;
     void main(){
       vec2 tc = normalize(cameraPosition.xz - iPos.xz + vec2(1e-4, 0.0));
       vec3 right = vec3(tc.y, 0.0, -tc.x);
@@ -1282,27 +1282,30 @@ const makeTreeMat = band => new THREE.ShaderMaterial({
       float weight = smoothstep(uBand.x, uBand.y, d) * (1.0 - smoothstep(uBand.z, uBand.w, d));
       float grow = clamp((weight * 1.08 - iMisc.z) / 0.08, 0.0, 1.0);
       vec3 w = iPos + (right * (position.x * iSize.x * uAspect * iSize.y) + vec3(0.0, position.y * iSize.x, 0.0)) * grow;
-      vUv0 = vec2((f0 + uv.x) / uViews, uv.y);
-      vUv1 = vec2((mod(f0 + 1.0, uViews) + uv.x) / uViews, uv.y);
+      float row = uSpecies >= 0.0 ? uSpecies : iSize.z; // the species' row in the atlas
+      vUv0 = vec2((f0 + uv.x) / uViews, (row + uv.y) / uRows);
+      vUv1 = vec2((mod(f0 + 1.0, uViews) + uv.x) / uViews, (row + uv.y) / uRows);
+      vY = uv.y;
       vW = w; vRight = right; vToCam = vec3(tc.x, 0.0, tc.y); vShade = iMisc.y;
       gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
     }`,
   fragmentShader: `
     ${GLSL_SKY}
-    uniform sampler2D tAlbedo; uniform sampler2D tNormal; uniform vec2 uAtlas; uniform vec3 uTint;
+    uniform sampler2D tAlbedo; uniform sampler2D tNormal; uniform vec2 uAtlas;
     uniform vec3 ambGround; uniform float fogDensity;
-    varying vec2 vUv0; varying vec2 vUv1; varying float vMix; varying vec3 vW; varying vec3 vRight; varying vec3 vToCam; varying float vShade;
+    varying vec2 vUv0; varying vec2 vUv1; varying float vMix; varying float vY; varying vec3 vW; varying vec3 vRight; varying vec3 vToCam; varying float vShade;
     void main(){
       vec4 a = mix(texture2D(tAlbedo, vUv0), texture2D(tAlbedo, vUv1), vMix);
       // Boost coverage in the smaller mip levels so distant trees don't thin out.
       vec2 tx = vUv0 * uAtlas;
       float lod = 0.5 * log2(max(max(dot(dFdx(tx), dFdx(tx)), dot(dFdy(tx), dFdy(tx))), 1e-8));
       if (a.a * (1.0 + max(lod, 0.0) * 0.35) < 0.5) discard;
-      vec3 alb = a.rgb / max(a.a, 0.05) * uTint * (0.8 + 0.4 * vShade);
+      vec3 alb = a.rgb / max(a.a, 0.05) * (0.8 + 0.4 * vShade);
       vec3 nb = mix(texture2D(tNormal, vUv0).xyz, texture2D(tNormal, vUv1).xyz, vMix) * 2.0 - 1.0;
       vec3 N = normalize(nb.x * vRight + vec3(0.0, nb.y, 0.0) + nb.z * vToCam);
       float diff = max(dot(N, sunDir), 0.0);
-      float ao = mix(0.45, 1.0, smoothstep(0.0, 0.8, vUv0.y)); // darker low in the crown
+      // Darker low in the crown, and the bare lower trunk sits in the forest floor's shade.
+      float ao = mix(0.28, 1.0, smoothstep(0.03, 0.6, vY));
       vec3 amb = mix(ambGround, ambSky, N.y * 0.5 + 0.5) * ao;
       vec3 col = alb * (sunCol * diff * (0.55 + 0.45 * ao) + amb);
       vec3 V = vW - cameraPosition; float dist = length(V); vec3 vd = V / dist;
@@ -1313,7 +1316,9 @@ const makeTreeMat = band => new THREE.ShaderMaterial({
       #include <encodings_fragment>
     }`
 });
-// Normals in the bake camera's space (x right, y up, z toward camera), alpha-tested like the colour pass.
+// Normals in the bake camera's space (x right, y up, z toward camera), alpha-tested like the colour
+// pass. Not flipped on back faces: the foliage cards carry authored outward normals that round the
+// crown, and flipping them for the back of a double-sided card would leave seams.
 const bakeNormalMat = map => new THREE.ShaderMaterial({
   uniforms: { map: { value: map } },
   defines: map ? { HAS_MAP: '' } : {},
@@ -1325,57 +1330,67 @@ const bakeNormalMat = map => new THREE.ShaderMaterial({
       #ifdef HAS_MAP
       if (texture2D(map, vUv).a < 0.5) discard;
       #endif
-      gl_FragColor = vec4(normalize(vN) * (gl_FrontFacing ? 1.0 : -1.0) * 0.5 + 0.5, 1.0);
+      gl_FragColor = vec4(normalize(vN) * 0.5 + 0.5, 1.0);
     }`
 });
 const gltfLoader = new GLTFLoader();
-// Render a tree model from IMP.views directions into colour and normal atlases.
-async function bakeImpostor(style) {
-  const gltf = await gltfLoader.loadAsync(TREE_DIR + encodeURIComponent(style.file));
-  const model = gltf.scene;
-  model.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(model);
-  const size = box.getSize(new THREE.Vector3()), ctr = box.getCenter(new THREE.Vector3());
-  const halfW = Math.max(size.x, size.z) * 0.55, halfH = size.y * 0.51;
-  const reach = Math.max(size.x, size.y, size.z);
-  const cam = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, reach * 0.1, reach * 6);
-  const bakeScene = new THREE.Scene();
-  bakeScene.add(model);
-  const meshes = [];
-  model.traverse(o => { if (o.isMesh) meshes.push(o); });
-  const originals = meshes.map(o => o.material);
-  const colour = originals.map(m => new THREE.MeshBasicMaterial({
-    map: m.map || null, color: m.color ? m.color.clone() : new THREE.Color(1, 1, 1),
-    vertexColors: !!m.vertexColors, alphaTest: m.map ? 0.5 : 0, side: THREE.DoubleSide
-  }));
-  const normals = originals.map(m => bakeNormalMat(m.map || null));
+// Render each species (its LOD0 mesh) from IMP.views directions into one colour and one normal
+// atlas, a row per species. Every species uses the same width-to-height frame, so one quad shape
+// fits all trees; each is framed to its own height.
+async function bakeForestAtlas() {
+  const models = await Promise.all(SPECIES.map(id => gltfLoader.loadAsync(`${TREE_DIR}${id}.glb`).then(g => g.scene)));
+  const frames = models.map(model => {
+    model.traverse(o => { if (o.name === 'LOD1') o.visible = false; });
+    model.updateMatrixWorld(true);
+    const lod0 = model.getObjectByName('LOD0') || model;
+    const box = new THREE.Box3().setFromObject(lod0);
+    return { model, size: box.getSize(new THREE.Vector3()), ctr: box.getCenter(new THREE.Vector3()) };
+  });
+  const aspect = Math.max(...frames.map(f => Math.max(f.size.x, f.size.z) * 0.55 / (f.size.y * 0.51)));
   const rtOpts = { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter };
-  const rtA = new THREE.WebGLRenderTarget(IMP.fw * IMP.views, IMP.fh, rtOpts);
-  const rtN = new THREE.WebGLRenderTarget(IMP.fw * IMP.views, IMP.fh, rtOpts);
+  const W = IMP.fw * IMP.views, Hh = IMP.fh * IMP.rows;
+  const rtA = new THREE.WebGLRenderTarget(W, Hh, rtOpts), rtN = new THREE.WebGLRenderTarget(W, Hh, rtOpts);
   const oldColour = renderer.getClearColor(new THREE.Color()), oldAlpha = renderer.getClearAlpha();
   renderer.setClearColor(0x000000, 0);
-  for (const [rt, mats] of [[rtA, colour], [rtN, normals]]) {
-    meshes.forEach((o, i) => { o.material = mats[i]; });
-    for (let i = 0; i < IMP.views; i++) {
-      const a = i / IMP.views * Math.PI * 2;
-      cam.position.set(ctr.x + Math.sin(a) * reach * 2, ctr.y, ctr.z + Math.cos(a) * reach * 2);
-      cam.lookAt(ctr);
-      cam.updateMatrixWorld();
-      rt.viewport.set(i * IMP.fw, 0, IMP.fw, IMP.fh);
-      rt.scissor.copy(rt.viewport);
-      rt.scissorTest = true;
-      renderer.setRenderTarget(rt);
-      renderer.clear(); // autoClear is off
-      renderer.render(bakeScene, cam);
+  for (const rt of [rtA, rtN]) { renderer.setRenderTarget(rt); rt.scissorTest = false; renderer.clear(); }
+  const disposables = [];
+  frames.forEach(({ model, size, ctr }, row) => {
+    const halfH = size.y * 0.51, halfW = aspect * halfH, reach = Math.max(size.x, size.y, size.z);
+    const cam = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, reach * 0.1, reach * 6);
+    const bakeScene = new THREE.Scene();
+    bakeScene.add(model);
+    const meshes = [];
+    model.traverse(o => { if (o.isMesh && o.visible) meshes.push(o); });
+    const originals = meshes.map(o => o.material);
+    const colour = originals.map(m => new THREE.MeshBasicMaterial({
+      map: m.map || null, color: m.color ? m.color.clone() : new THREE.Color(1, 1, 1),
+      alphaTest: m.alphaTest > 0 || m.transparent ? 0.5 : 0, side: THREE.DoubleSide
+    }));
+    const normals = originals.map(m => bakeNormalMat(m.alphaTest > 0 ? m.map : null));
+    for (const [rt, mats] of [[rtA, colour], [rtN, normals]]) {
+      meshes.forEach((o, i) => { o.material = mats[i]; });
+      for (let i = 0; i < IMP.views; i++) {
+        const a = i / IMP.views * Math.PI * 2;
+        cam.position.set(ctr.x + Math.sin(a) * reach * 2, ctr.y, ctr.z + Math.cos(a) * reach * 2);
+        cam.lookAt(ctr);
+        cam.updateMatrixWorld();
+        rt.viewport.set(i * IMP.fw, row * IMP.fh, IMP.fw, IMP.fh);
+        rt.scissor.copy(rt.viewport);
+        rt.scissorTest = true;
+        renderer.setRenderTarget(rt);
+        renderer.clear(); // autoClear is off
+        renderer.render(bakeScene, cam);
+      }
     }
-  }
+    model.traverse(o => { if (o.isMesh) disposables.push(o.geometry, o.material); });
+    disposables.push(...originals, ...colour, ...normals);
+    originals.forEach(m => { if (m.map) disposables.push(m.map); });
+  });
   renderer.setRenderTarget(null);
   renderer.setClearColor(oldColour, oldAlpha);
-  // Only the atlases are kept; free the model.
-  meshes.forEach(o => o.geometry.dispose());
-  originals.forEach(m => { if (m.map) m.map.dispose(); });
-  [...originals, ...colour, ...normals].forEach(m => m.dispose());
-  return { albedo: rtA.texture, normal: rtN.texture, aspect: halfW / halfH };
+  // Only the atlases are kept; free the models.
+  new Set(disposables).forEach(d => d.dispose());
+  return { albedo: rtA.texture, normal: rtN.texture, aspect };
 }
 function cellHash(ix, iz, k) {
   let h = Math.imul(ix, 374761393) ^ Math.imul(iz, 668265263) ^ Math.imul(k, 1274126177);
@@ -1391,8 +1406,14 @@ function treeChance(x, z, h) {
   if (isTown(x, z)) c *= 0.12;
   return c * (0.8 + 0.2 * snoise(x * 0.004, z * 0.004));
 }
+// Species of a tree from a per-cell random number r and the ground height: Douglas fir dominates;
+// western red cedar is common low down and near water, rare high up; western hemlock throughout.
+function treeSpecies(r, h) {
+  const cedar = h < 150 ? 0.30 : h < 500 ? 0.12 : 0.03, hemlock = 0.28;
+  return r < cedar ? 1 : r < cedar + hemlock ? 2 : 0;
+}
 // One quad per tree, with per-tree attributes written straight into typed arrays.
-const TREE_ATTRS = [['iPos', 3], ['iSize', 2], ['iMisc', 3]];
+const TREE_ATTRS = [['iPos', 3], ['iSize', 3], ['iMisc', 3]];
 function forestMesh(cap, material) {
   const g = new THREE.InstancedBufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0], 3));
@@ -1428,9 +1449,11 @@ function* ringJob(ring, mesh, cx, cz) {
       const chance = treeChance(x, z, h);
       if (pick >= w * chance) continue;
       const v = cellHash(i, k, salt + 3);
+      const species = treeSpecies(cellHash(i, k, salt + 7), h);
       P[n * 3] = x; P[n * 3 + 1] = h - 1.0; P[n * 3 + 2] = z;
-      S[n * 2] = lerp(22, 48, v * v) * (1 - 0.55 * smooth(700, 1300, h)); // height, m
-      S[n * 2 + 1] = lerp(0.85, 1.2, cellHash(i, k, salt + 4)); // width factor
+      S[n * 3] = lerp(22, 48, v * v) * (1 - 0.55 * smooth(700, 1300, h)) * (species ? 0.88 : 1); // height, m; fir tallest
+      S[n * 3 + 1] = lerp(0.85, 1.2, cellHash(i, k, salt + 4)); // width factor
+      S[n * 3 + 2] = species;
       M[n * 3] = cellHash(i, k, salt + 5) * 6.2832; // yaw
       M[n * 3 + 1] = cellHash(i, k, salt + 6); // shade
       M[n * 3 + 2] = pick / chance; // shown while the ring's weight at the camera is above this
@@ -1494,25 +1517,23 @@ function updateForest(pos) {
     if (!ring.logged) { ring.logged = true; console.info(`Forest ${ring.name} ring: ${r.value} trees in ${(performance.now() - ring.jobStart).toFixed(0)} ms`); }
   }
 }
-// Switch the tree style (baking its impostor on first use), or turn trees off.
+// Switch the tree style (baking the species atlas on first use), or turn trees off.
 async function setTreeStyle(name) {
-  if (!TREE_STYLES[name]) name = 'off';
+  if (!(name in TREE_STYLES)) name = 'off';
   treeState.style = name;
   document.querySelectorAll('#trees button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.style === name)));
-  const style = TREE_STYLES[name];
-  $('#b-credit').textContent = style ? `Trees: ${style.credit}, CC BY 4.0.` : '';
-  if (!style) { treeState.ready = false; showForest(); return; }
+  if (name === 'off') { treeState.ready = false; showForest(); return; }
   try {
     const t0 = performance.now();
-    const imp = await (treeState.cache[name] ||= bakeImpostor(style));
+    const imp = await (treeState.cache.atlas ||= bakeForestAtlas());
     if (treeState.style !== name) return;
     treeU.tAlbedo.value = imp.albedo; treeU.tNormal.value = imp.normal;
-    treeU.uAspect.value = imp.aspect; treeU.uTint.value.set(...style.tint);
+    treeU.uAspect.value = imp.aspect; treeU.uSpecies.value = TREE_STYLES[name];
     treeState.ready = true;
     showForest();
-    console.info(`Tree style ${name} ready in ${(performance.now() - t0).toFixed(0)} ms`);
+    console.info(`Trees (${name}) ready in ${(performance.now() - t0).toFixed(0)} ms`);
   } catch (err) {
-    console.error(`Could not load tree style ${name} from ${TREE_DIR}`, err);
+    console.error(`Could not load the tree models from ${TREE_DIR}`, err);
     treeState.ready = false; showForest();
   }
 }
