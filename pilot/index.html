@@ -595,7 +595,11 @@ const waterU = {
   tRefl: { value: reflRT.texture }, tHeight: { value: null },
   hB: { value: new THREE.Vector4(0, 0, 30, 0) }, hN: { value: new THREE.Vector2(2, 2) },
   uTexMat: { value: textureMatrix }, uWindDir: { value: new THREE.Vector2(0.94, 0.34) },
-  uWaveAmp: { value: 1 }, uBoat: { value: new THREE.Vector4(0, 0, 0, 0) }
+  uWaveAmp: { value: 1 }, uBoat: { value: new THREE.Vector4(0, 0, 0, 0) },
+  uBoatScale: { value: 1 }, // the boat model's scale
+  // Wake (see WAKE below): the boat's recent track points (x, z, time dropped, strength), the
+  // sailing clock, and the boat's position.
+  uTrack: { value: [] }, uWakeClock: { value: 0 }, uWakeBoat: { value: new THREE.Vector4() }
 };
 const waterMat = new THREE.ShaderMaterial({
   uniforms: { ...U, ...waterU },
@@ -607,7 +611,8 @@ const waterMat = new THREE.ShaderMaterial({
   fragmentShader: `
     ${GLSL_SKY}${GLSL_NOISE}
     uniform sampler2D tRefl; uniform sampler2D tHeight; uniform vec4 hB; uniform vec2 hN; uniform vec2 uWindDir;
-    uniform float uWaveAmp; uniform vec4 uBoat; uniform float fogDensity; uniform float uTime; uniform vec3 ambGround;
+    uniform float uWaveAmp; uniform vec4 uBoat; uniform float uBoatScale; uniform float fogDensity; uniform float uTime; uniform vec3 ambGround;
+    uniform vec4 uTrack[96]; uniform float uWakeClock; uniform vec4 uWakeBoat;
     varying vec3 vW; varying vec4 vM;
     vec2 rot(vec2 v, float a){ float c = cos(a), s = sin(a); return vec2(c * v.x - s * v.y, s * v.x + c * v.y); }
     // Each wave fades out as one pixel grows from a tenth to 30% of its wavelength (fp = metres
@@ -636,6 +641,35 @@ const waterMat = new THREE.ShaderMaterial({
       vec3 Vv = cameraPosition - vW; float dist = length(Vv); vec3 V = Vv / dist;
       float rough;
       vec3 n = waterNormal(vW.xz, fp, rough);
+      // Boat wake (WAKE in the script): sum the deep-water ring waves from the boat's recent track.
+      // Each ring tilts the surface by its slope a k sin(phase) along the radius; the sum is the
+      // Kelvin pattern, shown through the normals as ridges that catch the sky and sun.
+      float wakeFoam = 0.0;
+      vec2 fromBoat = vW.xz - uWakeBoat.xy;
+      if (dot(fromBoat, fromBoat) < 250.0 * 250.0) {
+        vec2 grad = vec2(0.0); float trail = 0.0;
+        for (int j = 0; j < 96; j++) {
+          vec4 s = uTrack[j];
+          float age = uWakeClock - s.z;
+          if (s.w <= 0.0 || age <= 0.0 || age > 70.0) continue;
+          vec2 d = vW.xz - s.xy;
+          float r = max(length(d), 1.0);
+          float k = 9.81 * age * age / (4.0 * r * r);              // local wavenumber (rad/m)
+          // The hull is metres long, so it can't make waves much shorter than itself; nor can a
+          // pixel show them. Both filters also keep the near-source rings from aliasing.
+          float filt = exp(-k * k * 0.7) * (1.0 - smoothstep(0.3, 0.7, k * fp)) * exp(-age / 45.0);
+          float a = s.w * age * age / (r * r * r) * filt;
+          grad += (d / r) * (a * k * sin(k * r));
+          // Turbulent water just behind the hull: narrow at first, spreading and fading with age.
+          float w = (0.8 + 0.06 * age) * uBoatScale;
+          trail += s.w * exp(-r * r / (w * w)) * exp(-age / 5.0) * smoothstep(0.0, 0.4, age);
+        }
+        // Limit the tilt: near the stern the rings stack up and would turn the water into a mirror.
+        grad *= 5.0 / (1.0 + 2.5 * length(grad));
+        n = normalize(n + vec3(-grad.x, 0.0, -grad.y));
+        float streak = vnoise(vW.xz * 0.9 + uTime * 0.2) * 0.55 + vnoise(vW.xz * 2.7 - uTime * 0.3) * 0.45;
+        wakeFoam = smoothstep(0.3, 0.85, trail * 0.7 * (0.3 + streak)) * 0.8;
+      }
       vec2 tuv = ((vW.xz - hB.xy) / hB.z + 0.5) / hN;
       float bed = -300.0;
       if (tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) bed = texture2D(tHeight, tuv).r;
@@ -700,14 +734,51 @@ function waterGeometry(half, segs) {
 const water = new THREE.Mesh(waterGeometry(100000, 96), waterMat);
 water.frustumCulled = false;
 water.renderOrder = 4;
+
+/* ---------- wake ----------
+   Linear deep-water wave theory, done exactly rather than on a grid. As the boat moves it drops a
+   small disturbance every WAKE.spacing metres along its track. Each one spreads as the deep-water
+   ring wave from a point impulse (the Cauchy-Poisson solution): at age t and distance r its crests
+   have wavenumber k = g t^2 / (4 r^2), phase g t^2 / (4 r) and amplitude ~ t^2 / r^3. Summing the
+   rings from the last WAKE.n track points in the water shader produces the Kelvin wake itself:
+   the 19.5-degree wedge of feathery diverging crests and curved transverse crests behind the stern,
+   about 2 pi v^2 / g apart (8 m at 7 kn). It follows the boat's real track, so it curves when the
+   boat turns. Ages run on the sailing clock (TIMEX times real time) so the pattern matches the
+   boat's speed in knots. A narrow turbulent foam trail behind the stern uses the same points.
+   Each point stores (x, z, time dropped, strength); the shader filters out waves shorter than the
+   hull or than a pixel can show. */
+const WAKE = { n: 96, spacing: 1.6 };
+const wakeTrack = Array.from({ length: WAKE.n }, () => new THREE.Vector4(0, 0, -1e6, 0));
+let wakeHead = 0, wakeClock = 0, wakeLast = null;
+waterU.uTrack.value = wakeTrack;
+function updateWake(dt) {
+  wakeClock += Math.min(dt, 0.05) * TIMEX;
+  waterU.uWakeClock.value = wakeClock;
+  waterU.uWakeBoat.value.set(sail.x, sail.z, 0, 0);
+  if (!wakeLast) { wakeLast = new THREE.Vector2(sail.x, sail.z); return; }
+  let dx = sail.x - wakeLast.x, dz = sail.z - wakeLast.y, d = Math.hypot(dx, dz);
+  if (d > 200) { wakeLast.set(sail.x, sail.z); return; } // a jump (mode switch, reset): start afresh
+  const strength = smooth(0.3, 3, sail.kn); // a boat at rest makes no wake
+  while (d >= WAKE.spacing) {
+    wakeLast.x += dx / d * WAKE.spacing; wakeLast.y += dz / d * WAKE.spacing;
+    wakeTrack[wakeHead].set(wakeLast.x, wakeLast.y, wakeClock, strength);
+    wakeHead = (wakeHead + 1) % WAKE.n;
+    dx = sail.x - wakeLast.x; dz = sail.z - wakeLast.y; d = Math.hypot(dx, dz);
+  }
+}
 scene.add(water);
 
 /* ---------- boat ----------
    A 9.1 m sloop: root at the waterline centre, bow toward -z.
    MainPivot (boom + mainsail) and RudderPivot turn about their local y. The jib turns about the
    forestay (its tack-to-head line), not the vertical, so its head stays on the stay. */
+// Drawn at two-thirds of its built size (about 6 m long, mast about 9 m): at full size it
+// dominated the chase view. The wake scales with it.
+const BOAT_SCALE = 0.65;
 const boat = new THREE.Group();
 boat.rotation.order = 'YXZ';
+boat.scale.setScalar(BOAT_SCALE);
+waterU.uBoatScale.value = BOAT_SCALE;
 boat.userData = { main: null, jib: null, rudder: null };
 scene.add(boat);
 const JIB_AXIS = new THREE.Vector3(0, 1, 0);
@@ -1541,6 +1612,7 @@ function frame(now) {
   updateForest(camera.position);
   dome.position.copy(camera.position);
   water.position.set(camera.position.x, 0, camera.position.z);
+  updateWake(dt);
   renderReflection();
   renderMain();
   updateLabels();
