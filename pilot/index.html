@@ -397,6 +397,13 @@ vec3 skyColor(vec3 d){
   col = mix(col, vec3(grey) * vec3(0.95, 0.98, 1.03) * (0.6 + 0.4 * day), uOvercast * 0.85);
   return col;
 }
+// Haze over distant land and water: the sky colour pushed toward blue, as far ridges on this coast
+// go blue with distance. Toward the sun it stays warm; under overcast it greys out.
+vec3 hazeColor(vec3 d){
+  vec3 c = skyColor(d);
+  float mu = max(dot(d, sunDir), 0.0);
+  return mix(c * vec3(0.68, 0.84, 1.12), c, clamp(pow(mu, 4.0) * (1.0 - uOvercast) + uOvercast * 0.7, 0.0, 1.0));
+}
 `;
 
 /* ---------- sky dome ---------- */
@@ -579,8 +586,8 @@ const makeTerrainMat = hole => new THREE.ShaderMaterial({
       float ao = clamp(1.0 - vCav * 0.55, 0.35, 1.25);
       vec3 amb = mix(ambGround, ambSky, nl.y * 0.5 + 0.5) * ao;
       vec3 col = c * (sunCol * diff * mix(1.0, 0.85, smoothstep(0.4, 1.0, vCav)) + amb);
-      float fogAmt = 1.0 - exp(-dist * fogDensity * (exp(-max(h, 0.0) * 0.0005) * 0.8 + 0.2));
-      col = mix(col, skyColor(normalize(vec3(vd.x, max(vd.y, -0.05), vd.z))), fogAmt);
+      float fogAmt = 1.0 - exp(-dist * fogDensity * 1.35 * (exp(-max(h, 0.0) * 0.0005) * 0.8 + 0.2));
+      col = mix(col, hazeColor(normalize(vec3(vd.x, max(vd.y, -0.05), vd.z))), fogAmt);
       gl_FragColor = vec4(col, 1.0);
       #include <tonemapping_fragment>
       #include <encodings_fragment>
@@ -679,11 +686,13 @@ const waterMat = new THREE.ShaderMaterial({
       float ndv = max(dot(n, V), 0.0);
       float F = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
       vec3 light = sunCol * max(sunDir.y, 0.0) * 0.55 + ambSky;
-      vec3 body = mix(vec3(0.002, 0.014, 0.022), vec3(0.010, 0.058, 0.060), exp(-depth * 0.015));
-      float see = exp(-depth * 0.21) * (0.35 + 0.65 * ndv);
-      body = mix(body, vec3(0.30, 0.28, 0.20) * 0.55, see);
-      body *= light * 1.35;
-      vec3 col = mix(body, refl, F);
+      // Howe Sound is milky blue-green with glacial silt: little light reaches the bottom, so the
+      // seabed shows only in the first metre or two, and the water itself carries colour.
+      vec3 body = mix(vec3(0.010, 0.040, 0.064), vec3(0.020, 0.072, 0.084), exp(-depth * 0.02));
+      float see = exp(-depth * 0.65) * (0.25 + 0.5 * ndv);
+      body = mix(body, vec3(0.30, 0.28, 0.20) * 0.45, see);
+      body *= light * 1.45;
+      vec3 col = mix(body, refl * vec3(0.86, 0.94, 1.0), F * 0.88);
       vec3 R = reflect(-V, n);
       float sp = max(dot(R, sunDir), 0.0);
       // Where the small waves have faded, the glint widens (same total energy) instead of
@@ -696,26 +705,12 @@ const waterMat = new THREE.ShaderMaterial({
       float surf = 0.5 + 0.5 * sin(depth * 3.5 - uTime * 1.6 + fn * 3.0);
       float foam = (1.0 - smoothstep(0.15, 1.9, depth)) * smoothstep(0.4, 0.78, fn * 0.7 + surf * 0.5);
       foam += (1.0 - smoothstep(0.0, 0.3, depth)) * 0.55;
-      if (uBoat.w > 0.01) {
-        vec2 rel = vW.xz - uBoat.xy;
-        vec2 fw = vec2(sin(uBoat.z), -cos(uBoat.z));
-        vec2 sd = vec2(cos(uBoat.z), sin(uBoat.z));
-        float back = -dot(rel, fw), lat = dot(rel, sd);
-        if (back > -6.0 && back < 280.0) {
-          float b = max(back, 0.0);
-          float arm = abs(abs(lat) - (1.5 + b * 0.34));
-          float armF = exp(-arm * (1.1 - min(b, 220.0) * 0.004)) * exp(-b * 0.011);
-          float core = exp(-abs(lat) / (1.3 + b * 0.07)) * exp(-b * 0.03);
-          float bow = exp(-abs(back + 4.3) * 1.2) * exp(-abs(lat) * 0.6) * 0.6;
-          float wn = vnoise(vec2(b * 0.5, lat * 0.8) + uTime * vec2(0.6, 0.15));
-          foam += (armF * 0.85 + core + bow) * smoothstep(0.15, 0.7, wn + 0.3) * uBoat.w * smoothstep(-6.0, -2.0, back);
-        }
-      }
+      foam += wakeFoam;
       foam = clamp(foam, 0.0, 1.0) * (1.0 - smoothstep(700.0, 1600.0, dist));
-      vec3 foamCol = (sunCol * max(sunDir.y, 0.0) + ambSky * 1.6) * 0.72;
+      vec3 foamCol = (sunCol * max(sunDir.y, 0.0) + ambSky * 1.6) * 0.62;
       col = mix(col, foamCol, foam);
       float fogAmt = 1.0 - exp(-dist * fogDensity);
-      col = mix(col, skyColor(normalize(vec3(-V.x, max(-V.y, -0.05), -V.z))), fogAmt);
+      col = mix(col, hazeColor(normalize(vec3(-V.x, max(-V.y, -0.05), -V.z))), fogAmt);
       gl_FragColor = vec4(col, 1.0);
       #include <tonemapping_fragment>
       #include <encodings_fragment>
