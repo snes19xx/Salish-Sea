@@ -1056,7 +1056,7 @@ function updateChase(dt) {
   chase.y = camInit ? Math.max(2.5, chase.y + (y - chase.y) * (1 - Math.exp(-dt * 4))) : y;
   camInit = true;
   camera.position.set(x, chase.y, z);
-  camera.lookAt(sail.x, 5, sail.z);
+  camera.lookAt(sail.x, 5 * BOAT_SCALE, sail.z); // about mid-height on the rig
 }
 
 /* ---------- reflection ---------- */
@@ -1072,16 +1072,11 @@ function renderReflection() {
   mirrorCam.updateMatrixWorld();
   mirrorCam.matrixWorldInverse.copy(mirrorCam.matrixWorld).invert();
   textureMatrix.copy(BIAS).multiply(mirrorCam.projectionMatrix).multiply(mirrorCam.matrixWorldInverse);
-  // The distant tree ring is a few pixels per tree and invisible in a distorted half-size
-  // reflection, so the reflection skips it.
-  const distant = FOREST.find(r => r.name === 'distant'), dVis = distant && distant.front.visible;
-  if (distant) distant.front.visible = false;
   water.visible = false; U.uClip.value = 1;
   renderer.clippingPlanes = REFLECT_CLIP; // the boat's keel and rudder are under water: keep them out of the reflection
   renderSplit(mirrorCam, reflRT);
   renderer.clippingPlanes = [];
   water.visible = true; U.uClip.value = 0;
-  if (distant) distant.front.visible = dVis;
 }
 const REFLECT_CLIP = [new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)];
 
@@ -1285,8 +1280,8 @@ function build() {
    Trees are impostors. At load time a tree model is rendered from 8 directions into a texture
    (colour, plus surface normals so the sun can light it), and every tree is one camera-facing quad
    showing the baked view closest to the camera's angle: 2 triangles per tree.
-   Three rings follow the camera: dense within 650 m, sparser out to 3.2 km, sparse out to 7.5 km;
-   beyond that the canopy painted by the terrain shader takes over. Each tree is hashed from its grid cell, so trees stay put.
+   Two rings follow the camera: dense within 650 m, sparser out to 3.2 km; beyond that the canopy
+   painted by the terrain shader takes over. Each tree is hashed from its grid cell, so trees stay put.
    Rebuilds run a few milliseconds per frame into a hidden buffer that is swapped in when complete.
    Each ring fades in and out by the live camera distance, in the vertex shader: every tree has a
    random threshold and shrinks away as the ring's weight drops below it. A rebuild only has to
@@ -1301,10 +1296,9 @@ const IMP = { views: 8, fw: 256, fh: 512, rows: SPECIES.length };
 // band: the ring's weight fades in over [band.x, band.y] metres and out over [band.z, band.w].
 const FOREST = [
   { name: 'near', cell: 7, cap: 60000, every: 120, salt: 11, band: [-2, -1, 530, 650] },
-  { name: 'far', cell: 14, cap: 220000, every: 300, salt: 23, band: [530, 650, 2500, 3200] },
-  // The flyover stays mid-channel, 1-3 km from shore, so most slopes in view are beyond the far
-  // ring. A sparse ring carries the trees out to the opposite shores; a tree there is a few pixels.
-  { name: 'distant', cell: 28, cap: 200000, every: 600, salt: 37, band: [2500, 3200, 6000, 7500] }
+  { name: 'far', cell: 14, cap: 220000, every: 300, salt: 23, band: [530, 650, 2500, 3200] }
+  // No trees beyond 3.2 km: a sparse distant ring read as scattered dots on the far mountains,
+  // which look better as the painted canopy under blue haze.
 ];
 for (const ring of FOREST) {
   const [a, b, c, d] = ring.band;
@@ -1359,6 +1353,8 @@ const makeTreeMat = band => new THREE.ShaderMaterial({
       float lod = 0.5 * log2(max(max(dot(dFdx(tx), dFdx(tx)), dot(dFdy(tx), dFdy(tx))), 1e-8));
       if (a.a * (1.0 + max(lod, 0.0) * 0.35) < 0.5) discard;
       vec3 alb = a.rgb / max(a.a, 0.05) * (0.8 + 0.4 * vShade);
+      // Coastal conifers read as dark blue-green, not bright green: desaturate, cool and darken.
+      alb = mix(vec3(dot(alb, vec3(0.3, 0.59, 0.11))), alb, 0.62) * vec3(0.80, 0.90, 1.0);
       vec3 nb = mix(texture2D(tNormal, vUv0).xyz, texture2D(tNormal, vUv1).xyz, vMix) * 2.0 - 1.0;
       vec3 N = normalize(nb.x * vRight + vec3(0.0, nb.y, 0.0) + nb.z * vToCam);
       float diff = max(dot(N, sunDir), 0.0);
@@ -1367,8 +1363,8 @@ const makeTreeMat = band => new THREE.ShaderMaterial({
       vec3 amb = mix(ambGround, ambSky, N.y * 0.5 + 0.5) * ao;
       vec3 col = alb * (sunCol * diff * (0.55 + 0.45 * ao) + amb);
       vec3 V = vW - cameraPosition; float dist = length(V); vec3 vd = V / dist;
-      float fogAmt = 1.0 - exp(-dist * fogDensity * (exp(-max(vW.y, 0.0) * 0.0005) * 0.8 + 0.2));
-      col = mix(col, skyColor(normalize(vec3(vd.x, max(vd.y, -0.05), vd.z))), fogAmt);
+      float fogAmt = 1.0 - exp(-dist * fogDensity * 1.35 * (exp(-max(vW.y, 0.0) * 0.0005) * 0.8 + 0.2));
+      col = mix(col, hazeColor(normalize(vec3(vd.x, max(vd.y, -0.05), vd.z))), fogAmt);
       gl_FragColor = vec4(col, 1.0);
       #include <tonemapping_fragment>
       #include <encodings_fragment>
