@@ -665,17 +665,26 @@ const waterMat = new THREE.ShaderMaterial({
           // The hull is metres long, so it can't make waves much shorter than itself; nor can a
           // pixel show them. Both filters also keep the near-source rings from aliasing.
           float filt = exp(-k * k * 0.7) * (1.0 - smoothstep(0.3, 0.7, k * fp)) * exp(-age / 45.0);
-          float a = s.w * age * age / (r * r * r) * filt;
+          // Amplitude ~ t^2 / r^3, with r held at least a few metres: right behind the hull the
+          // rings would otherwise pile up into one big bulge.
+          float ra = max(r, 5.0);
+          float a = s.w * age * age / (ra * ra * ra) * filt;
           grad += (d / r) * (a * k * sin(k * r));
-          // Turbulent water just behind the hull: narrow at first, spreading and fading with age.
-          float w = (0.8 + 0.06 * age) * uBoatScale;
-          trail += s.w * exp(-r * r / (w * w)) * exp(-age / 5.0) * smoothstep(0.0, 0.4, age);
+          // Turbulent water behind the hull: about the beam wide, spreading and fading over ~15 s.
+          float w = (1.1 + 0.10 * age) * uBoatScale;
+          trail += s.w * exp(-r * r / (w * w)) * exp(-age / 8.0) * smoothstep(0.0, 0.3, age);
         }
-        // Limit the tilt: near the stern the rings stack up and would turn the water into a mirror.
-        grad *= 5.0 / (1.0 + 2.5 * length(grad));
+        // Gentle tilt, capped: a 7 kn sloop's wake is a low swell, not a mirror-bright ridge.
+        float steep = length(grad);
+        grad *= 2.0 / (1.0 + 5.0 * steep);
         n = normalize(n + vec3(-grad.x, 0.0, -grad.y));
         float streak = vnoise(vW.xz * 0.9 + uTime * 0.2) * 0.55 + vnoise(vW.xz * 2.7 - uTime * 0.3) * 0.45;
-        wakeFoam = smoothstep(0.3, 0.85, trail * 0.7 * (0.3 + streak)) * 0.8;
+        // A broken white trail behind the stern, plus small whitecaps on the steepest wake crests
+        // close to the boat.
+        // Patchy rather than a solid stripe: noise decides where the foam breaks through.
+        float trailFoam = smoothstep(0.18, 0.55, trail * 1.35 * smoothstep(0.15, 0.7, streak));
+        float crestFoam = smoothstep(0.10, 0.22, steep) * smoothstep(0.62, 0.85, streak) * exp(-length(fromBoat) / 40.0);
+        wakeFoam = min(trailFoam * 0.75 + crestFoam * 0.45, 0.8);
       }
       vec2 tuv = ((vW.xz - hB.xy) / hB.z + 0.5) / hN;
       float bed = -300.0;
