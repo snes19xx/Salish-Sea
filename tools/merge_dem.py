@@ -45,6 +45,14 @@ def land_mask_from_coastline(area, transform, width, height):
     """Rasterise land from OSM coastline ways, which keep land on their left."""
     grid_box = box(transform.c, transform.f - height * transform.a,
                    transform.c + width * transform.a, transform.f)
+    land_faces, lines = coastline_land(area, grid_box)
+    mask = rasterize(((f, 1) for f in land_faces), out_shape=(height, width),
+                     transform=transform, fill=0, dtype="uint8")
+    return mask.astype(bool), lines
+
+
+def coastline_land(area, grid_box):
+    """Land polygons (UTM) inside grid_box from the OSM coastline, plus the merged coast lines."""
     feats = json.loads((area.vectors / "coastline.geojson").read_text())["features"]
     ways = [to_utm_geom(shape(f["geometry"])) for f in feats]
     # Join ways end to end, keeping their direction, so the side test works at way joints.
@@ -67,9 +75,7 @@ def land_mask_from_coastline(area, transform, width, height):
         if cross > 0:
             land_faces.append(face)
     print(f"Coastline: {len(lines)} lines, {len(faces)} faces, {len(land_faces)} land")
-    mask = rasterize(((f, 1) for f in land_faces), out_shape=(height, width),
-                     transform=transform, fill=0, dtype="uint8")
-    return mask.astype(bool), lines
+    return land_faces, lines
 
 
 def datum_offsets(area, sea, transform):

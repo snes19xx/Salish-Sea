@@ -198,6 +198,18 @@ def fetch_osm(area):
                       "geometry": mapping(Point(lon, lat))})
     write_geojson(area.vectors / "places_osm.geojson", feats)
 
+    # Roads and ferry routes for the minimap (no service roads, tracks or paths).
+    roads = overpass(
+        area,
+        '(way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|'
+        'living_street)(_link)?$"];way["route"="ferry"];);out geom;', "roads")
+    write_geojson(area.vectors / "roads_osm.geojson", [
+        {"type": "Feature",
+         "properties": {"id": el["id"], "highway": el["tags"].get("highway"),
+                        "route": el["tags"].get("route"), "name": el["tags"].get("name")},
+         "geometry": mapping(way_line(el))}
+        for el in roads["elements"] if el["type"] == "way" and len(el.get("geometry", [])) >= 2])
+
 
 if __name__ == "__main__":
     area = area_from_args("Download MRDEM, NONNA and OSM data for a pilot area")
