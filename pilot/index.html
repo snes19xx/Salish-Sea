@@ -229,7 +229,7 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
     <p class="pos" id="r-pos">Beam reach</p>
   </section>
 
-  <div class="panel hint" id="hint" hidden><span><kbd>A</kbd> <kbd>D</kbd> steer</span><span><kbd>E</kbd> motor</span><span><kbd>B</kbd> hold to boost</span><span>Drag to orbit</span><span>Scroll to zoom</span><span>Time runs 6&times; faster</span></div>
+  <div class="panel hint" id="hint" hidden><span><kbd>A</kbd> <kbd>D</kbd> steer</span><span><kbd>E</kbd> motor</span><span><kbd>B</kbd> hold to boost</span><span>Drag to orbit</span><span>Scroll to zoom</span></div>
 
   <div class="rudder" id="rudder" hidden>
     <button type="button" id="rud-l" aria-label="Steer to port">&#8630;</button>
@@ -983,7 +983,7 @@ $('#rud-m').addEventListener('click', () => toggleMotor());
 
 /* ---------- sailing ---------- */
 const TIMEX = 6;
-const BOOST_KN = 30; // hold B: surge to this speed, then settle back when released
+const BOOST_KN = 45; // hold B: surge to this speed, then settle back when released
 let WIND_FROM = 292, WIND_KN = 14; // set per area from pilot_height.json
 const sail = { x: 0, z: 1650, hdg: 262, kn: 0, motor: false, boom: 0.3, heel: 0, rudder: 0, boost: false };
 const POINTS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
@@ -1067,7 +1067,8 @@ function setMode(m) {
   $('#rudder').hidden = !(m === 'sail' && coarse);
   $('#hint').hidden = m !== 'sail'; // only the sailing keys need explaining
   stage.classList.toggle('sailing', m === 'sail');
-  look.yaw = 0; look.pitch = m === 'sail' ? -0.18 : 0;
+  look.yaw = 0; look.pitch = 0;
+  if (m === 'sail') look.dist = SAIL_VIEW_DIST;
   camInit = false;
 }
 $('#mode-fly').addEventListener('click', () => setMode('fly'));
@@ -1080,6 +1081,9 @@ const camTarget = new THREE.Vector3(), tmpA = new THREE.Vector3(), tmpB = new TH
 // follows the mouse without lag.
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const chase = { hdg: 0, y: 0, dist: 30 };
+// The chase camera starts 44 m back and about 13 degrees above the boat (CHASE_PITCH), so the
+// horizon sits a quarter of the way down the view and the landscape fills the top of it.
+const SAIL_VIEW_DIST = 44, CHASE_PITCH = 0.22;
 function updateFly(dt) {
   flyU = (flyU + dt * 78 / pathLen) % 1;
   pathAt(flyU, tmpA);
@@ -1101,7 +1105,7 @@ function updateChase(dt) {
   chase.hdg += angDiff(sail.hdg, chase.hdg) * (1 - Math.exp(-dt * 2.5)); // swing round smoothly when steering
   chase.dist += (look.dist - chase.dist) * (1 - Math.exp(-dt * 10)); // ease the scroll-wheel steps
   const h = THREE.MathUtils.degToRad(chase.hdg) + look.yaw;
-  const pitch = 0.22 - look.pitch;
+  const pitch = CHASE_PITCH - look.pitch;
   const d = chase.dist;
   const x = sail.x - Math.sin(h) * Math.cos(pitch) * d, z = sail.z + Math.cos(h) * Math.cos(pitch) * d;
   const y = Math.max(2.5, Math.sin(pitch) * d + 4, sampleH(x, z) + 6);
