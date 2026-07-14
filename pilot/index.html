@@ -606,7 +606,8 @@ const waterU = {
   uBoatScale: { value: 1 }, // the boat model's scale
   // Wake (see WAKE below): the boat's recent track points (x, z, time dropped, strength), the
   // sailing clock, and the boat's position.
-  uTrack: { value: [] }, uWakeClock: { value: 0 }, uWakeBoat: { value: new THREE.Vector4() }
+  uTrack: { value: [] }, uTrackS: { value: [] }, uWakeClock: { value: 0 }, uWakeBoat: { value: new THREE.Vector4() },
+  uWakeV: { value: 3.6 }
 };
 const waterMat = new THREE.ShaderMaterial({
   uniforms: { ...U, ...waterU },
@@ -619,7 +620,15 @@ const waterMat = new THREE.ShaderMaterial({
     ${GLSL_SKY}${GLSL_NOISE}
     uniform sampler2D tRefl; uniform sampler2D tHeight; uniform vec4 hB; uniform vec2 hN; uniform vec2 uWindDir;
     uniform float uWaveAmp; uniform vec4 uBoat; uniform float uBoatScale; uniform float fogDensity; uniform float uTime; uniform vec3 ambGround;
-    uniform vec4 uTrack[96]; uniform float uWakeClock; uniform vec4 uWakeBoat;
+    uniform vec4 uTrack[96]; uniform float uTrackS[96]; uniform float uWakeClock; uniform vec4 uWakeBoat; uniform float uWakeV;
+    // One Kelvin wave system at (x behind, y beside) for direction tan t: slope (d/dx, d/dy) of a
+    // wave of unit slope amplitude, given K0 = g / v^2. The phase gradient is the wave vector.
+    vec2 kelvinSlope(float x, float y, float t, float K0, out float k){
+      float c = sqrt(1.0 + t * t);
+      float phase = K0 * (x + y * t) * c;
+      k = K0 * c * c;
+      return -sin(phase) * vec2(1.0, t) / c;
+    }
     varying vec3 vW; varying vec4 vM;
     vec2 rot(vec2 v, float a){ float c = cos(a), s = sin(a); return vec2(c * v.x - s * v.y, s * v.x + c * v.y); }
     // Each wave fades out as one pixel grows from a tenth to 30% of its wavelength (fp = metres
@@ -648,43 +657,67 @@ const waterMat = new THREE.ShaderMaterial({
       vec3 Vv = cameraPosition - vW; float dist = length(Vv); vec3 V = Vv / dist;
       float rough;
       vec3 n = waterNormal(vW.xz, fp, rough);
-      // Boat wake (WAKE in the script): sum the deep-water ring waves from the boat's recent track.
-      // Each ring tilts the surface by its slope a k sin(phase) along the radius; the sum is the
-      // Kelvin pattern, shown through the normals as ridges that catch the sky and sun.
+      // Boat wake (WAKE in the script): find this pixel's place relative to the boat's track (x
+      // metres back along it, y to the side), then add the two Kelvin wave systems there.
       float wakeFoam = 0.0;
       vec2 fromBoat = vW.xz - uWakeBoat.xy;
-      if (dot(fromBoat, fromBoat) < 250.0 * 250.0) {
-        vec2 grad = vec2(0.0); float trail = 0.0;
+      if (dot(fromBoat, fromBoat) < 400.0 * 400.0) {
+        float best = 1e12, wx = 0.0, wy = 0.0, wAge = 0.0, wStr = 0.0, trail = 0.0;
+        vec2 wFwd = vec2(0.0, -1.0);
+        vec4 prev = uTrack[95]; float prevS = uTrackS[95]; // ring buffer: walk consecutive pairs
         for (int j = 0; j < 96; j++) {
-          vec4 s = uTrack[j];
-          float age = uWakeClock - s.z;
-          if (s.w <= 0.0 || age <= 0.0 || age > 70.0) continue;
-          vec2 d = vW.xz - s.xy;
-          float r = max(length(d), 1.0);
-          float k = 9.81 * age * age / (4.0 * r * r);              // local wavenumber (rad/m)
-          // The hull is metres long, so it can't make waves much shorter than itself; nor can a
-          // pixel show them. Both filters also keep the near-source rings from aliasing.
-          float filt = exp(-k * k * 0.7) * (1.0 - smoothstep(0.3, 0.7, k * fp)) * exp(-age / 45.0);
-          // Amplitude ~ t^2 / r^3, with r held at least a few metres: right behind the hull the
-          // rings would otherwise pile up into one big bulge.
-          float ra = max(r, 5.0);
-          float a = s.w * age * age / (ra * ra * ra) * filt;
-          grad += (d / r) * (a * k * sin(k * r));
-          // Turbulent water behind the hull: about the beam wide, spreading and fading over ~15 s.
+          vec4 s = uTrack[j]; float sS = uTrackS[j];
+          vec4 p0 = prev; float p0S = prevS; prev = s; prevS = sS;
+          vec2 seg = s.xy - p0.xy; float sl = dot(seg, seg);
+          // Skip empty slots and the buffer's seam (newest -> oldest), which isn't a real segment.
+          if (s.w <= 0.0 || p0.w <= 0.0 || sS <= p0S || sl > 4.0 * uWakeBoat.z * uWakeBoat.z + 4.0) continue;
+          float t = clamp(dot(vW.xz - p0.xy, seg) / sl, 0.0, 1.0);
+          vec2 off = vW.xz - (p0.xy + seg * t);
+          float d2 = dot(off, off);
+          float age = uWakeClock - mix(p0.z, s.z, t);
+          if (d2 < best) {
+            best = d2;
+            vec2 f = seg / sqrt(sl);
+            wFwd = f;
+            wx = uWakeBoat.w - mix(p0S, sS, t);
+            wy = dot(off, vec2(-f.y, f.x));
+            wAge = age; wStr = mix(p0.w, s.w, t);
+          }
+          // Turbulent water behind the hull: a narrow trail that spreads and fades over ~10 s.
           float w = (1.1 + 0.10 * age) * uBoatScale;
-          trail += s.w * exp(-r * r / (w * w)) * exp(-age / 8.0) * smoothstep(0.0, 0.3, age);
+          trail = max(trail, min(s.w, 1.6) * exp(-d2 / (w * w)) * exp(-age / 8.0) * smoothstep(0.0, 0.3, age));
         }
-        // Gentle tilt, capped: a 7 kn sloop's wake is a low swell, not a mirror-bright ridge.
-        float steep = length(grad);
-        grad *= 2.0 / (1.0 + 5.0 * steep);
-        n = normalize(n + vec3(-grad.x, 0.0, -grad.y));
+        vec2 grad = vec2(0.0); float steep = 0.0;
+        float ratio = abs(wy) / max(wx, 1e-3);
+        if (wx > 0.5 && ratio < 0.3535) {
+          float K0 = 9.81 / (uWakeV * uWakeV);
+          float lam = 6.2831853 / K0;                           // transverse wavelength
+          float disc = sqrt(max(wx * wx - 8.0 * wy * wy, 0.0));
+          float ay = max(abs(wy), 1e-3) * sign(wy + 1e-6);
+          float tT = (-wx + disc) / (4.0 * ay), tD = (-wx - disc) / (4.0 * ay);
+          // Envelope: fades with distance and age, swells toward the cusps at the wedge edges and
+          // softens right at the edge. Short waves are dropped where a pixel (or the hull) is too big.
+          float env = wStr * exp(-wAge / 40.0) * smoothstep(0.0, 1.5 * lam, wx) / sqrt(1.0 + wx / (3.0 * lam));
+          float cusp = 1.0 + 1.2 * smoothstep(0.24, 0.35, ratio);
+          float edge = 1.0 - smoothstep(0.335, 0.3535, ratio);
+          float kT, kD;
+          vec2 sT = kelvinSlope(wx, wy, tT, K0, kT);
+          vec2 sD = kelvinSlope(wx, wy, tD, K0, kD);
+          float hull = 6.0 * uBoatScale;
+          float fT = 1.0 - smoothstep(0.3, 0.7, kT * fp);
+          float fD = (1.0 - smoothstep(0.3, 0.7, kD * fp)) * exp(-kD * kD * hull * hull * 0.02);
+          vec2 local = (0.08 * sT * fT + 0.11 * sD * fD) * env * cusp * edge;
+          // local.x is along "behind", local.y to the side: back to world.
+          grad = local.x * (-wFwd) + local.y * vec2(-wFwd.y, wFwd.x);
+          steep = length(grad);
+          n = normalize(n + vec3(-grad.x, 0.0, -grad.y));
+        }
         float streak = vnoise(vW.xz * 0.9 + uTime * 0.2) * 0.55 + vnoise(vW.xz * 2.7 - uTime * 0.3) * 0.45;
-        // A broken white trail behind the stern, plus small whitecaps on the steepest wake crests
-        // close to the boat.
-        // Patchy rather than a solid stripe: noise decides where the foam breaks through.
-        float trailFoam = smoothstep(0.18, 0.55, trail * 1.35 * smoothstep(0.15, 0.7, streak));
-        float crestFoam = smoothstep(0.10, 0.22, steep) * smoothstep(0.62, 0.85, streak) * exp(-length(fromBoat) / 40.0);
-        wakeFoam = min(trailFoam * 0.75 + crestFoam * 0.45, 0.8);
+        // A broken white trail behind the stern, plus a few whitecaps on the steepest wake crests
+        // near the boat. Noise decides where the foam breaks through.
+        float trailFoam = smoothstep(0.25, 0.65, trail * 1.2 * smoothstep(0.2, 0.75, streak));
+        float crestFoam = smoothstep(0.07, 0.12, steep) * smoothstep(0.6, 0.85, streak) * exp(-length(fromBoat) / 50.0);
+        wakeFoam = min(trailFoam * 0.75 + crestFoam * 0.5, 0.8);
       }
       vec2 tuv = ((vW.xz - hB.xy) / hB.z + 0.5) / hN;
       float bed = -300.0;
@@ -740,35 +773,46 @@ water.frustumCulled = false;
 water.renderOrder = 4;
 
 /* ---------- wake ----------
-   Linear deep-water wave theory, done exactly rather than on a grid. As the boat moves it drops a
-   small disturbance every WAKE.spacing metres along its track. Each one spreads as the deep-water
-   ring wave from a point impulse (the Cauchy-Poisson solution): at age t and distance r its crests
-   have wavenumber k = g t^2 / (4 r^2), phase g t^2 / (4 r) and amplitude ~ t^2 / r^3. Summing the
-   rings from the last WAKE.n track points in the water shader produces the Kelvin wake itself:
-   the 19.5-degree wedge of feathery diverging crests and curved transverse crests behind the stern,
-   about 2 pi v^2 / g apart (8 m at 7 kn). It follows the boat's real track, so it curves when the
-   boat turns. Ages run on the sailing clock (TIMEX times real time) so the pattern matches the
-   boat's speed in knots. A narrow turbulent foam trail behind the stern uses the same points.
-   Each point stores (x, z, time dropped, strength); the shader filters out waves shorter than the
-   hull or than a pixel can show. */
-const WAKE = { n: 96, spacing: 1.6 };
+   The Kelvin wake, evaluated per pixel from the stationary-phase solution for a moving point source
+   in deep water. Behind a boat at speed v, a point x metres back along the track and y metres to
+   the side sees two wave systems, with direction tan(theta) = t solving 2 y t^2 + x t + y = 0:
+   transverse waves (small t) and diverging waves (large t), each with phase
+   (g / v^2) (x + y t) sqrt(1 + t^2). They only exist inside |y| < x / sqrt(8), the 19.5-degree
+   wedge, and meet in bright cusps along its edges. This gives the real shape (curved transverse
+   crests about 2 pi v^2 / g apart, feathery diverging crests) without any noise.
+   x and y are measured from the boat's actual track, so the wake bends with its turns: the boat
+   drops a point every WAKE.spacing metres (position, time, strength, distance travelled) and the
+   shader finds each pixel's nearest track segment. A narrow turbulent foam trail uses the same
+   segments. The wave pattern uses the sailing-clock speed, capped at WAKE.vMax so the boost wake
+   keeps visible ripples instead of becoming one long, flat swell. */
+const WAKE = { n: 96, spacing: 1.6, vMax: 7.0 };
 const wakeTrack = Array.from({ length: WAKE.n }, () => new THREE.Vector4(0, 0, -1e6, 0));
-let wakeHead = 0, wakeClock = 0, wakeLast = null;
+const wakeDist = new Array(WAKE.n).fill(0); // distance travelled when each point was dropped
+let wakeHead = 0, wakeClock = 0, wakeLast = null, wakeTravel = 0;
 waterU.uTrack.value = wakeTrack;
+waterU.uTrackS.value = wakeDist;
 function updateWake(dt) {
   wakeClock += Math.min(dt, 0.05) * TIMEX;
   waterU.uWakeClock.value = wakeClock;
-  waterU.uWakeBoat.value.set(sail.x, sail.z, 0, 0);
+  // Points are spaced so the 96 of them always cover about 30 s of sailing-clock history.
+  const v = sail.kn * 0.5144; // m/s on the sailing clock
+  WAKE.spacing = Math.max(1.6, v * 0.31);
   if (!wakeLast) { wakeLast = new THREE.Vector2(sail.x, sail.z); return; }
   let dx = sail.x - wakeLast.x, dz = sail.z - wakeLast.y, d = Math.hypot(dx, dz);
   if (d > 200) { wakeLast.set(sail.x, sail.z); return; } // a jump (mode switch, reset): start afresh
-  const strength = smooth(0.3, 3, sail.kn); // a boat at rest makes no wake
+  // A boat at rest makes no wake; a faster one pushes more water (capped at 2x the 7 kn wake).
+  const strength = smooth(0.3, 3, sail.kn) * Math.min(2, Math.max(sail.kn, 7) / 7);
   while (d >= WAKE.spacing) {
     wakeLast.x += dx / d * WAKE.spacing; wakeLast.y += dz / d * WAKE.spacing;
+    wakeTravel += WAKE.spacing;
     wakeTrack[wakeHead].set(wakeLast.x, wakeLast.y, wakeClock, strength);
+    wakeDist[wakeHead] = wakeTravel;
     wakeHead = (wakeHead + 1) % WAKE.n;
     dx = sail.x - wakeLast.x; dz = sail.z - wakeLast.y; d = Math.hypot(dx, dz);
   }
+  // Boat position, point spacing, distance travelled at the boat, and the wave speed.
+  waterU.uWakeBoat.value.set(sail.x, sail.z, WAKE.spacing, wakeTravel + d);
+  waterU.uWakeV.value = Math.min(Math.max(v, 1.5), WAKE.vMax);
 }
 scene.add(water);
 
