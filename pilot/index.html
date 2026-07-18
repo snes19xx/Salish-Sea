@@ -76,7 +76,7 @@ button { font: inherit; color: inherit; }
   padding: 0.45rem 0.85rem 0.4rem;
 }
 .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1.15rem; }
-.stage.sailing .sky { max-width: min(1240px, calc(100% - 28px - 220px)); }
+.stage.sailing .sky { max-width: min(1240px, calc(100% - 28px - 314px)); }
 .field { display: flex; align-items: center; gap: 0.55rem; }
 .field input[type=range] { width: 112px; }
 .field label, .field .name { font-size: 0.74rem; color: var(--ink2); white-space: nowrap; }
@@ -106,28 +106,29 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 11px;
 input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50%; background: var(--paper); border: 1px solid var(--ink); }
 
 /* Chart and boat instruments: bottom right. A north-up minimap in the style of Stamen's Toner
-   Lite (white land, grey water and roads) inside a compass ring, with the readings underneath. */
-.inst { right: max(14px, env(safe-area-inset-right)); bottom: 14px; width: 206px; padding: 0.6rem 0.65rem 0.5rem; }
-.chart { position: relative; aspect-ratio: 1; }
-.chart canvas, .chart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.chart canvas { clip-path: circle(44%); background: #dcdcdc; }
-.chart svg { color: var(--ink3); }
-.inst .rose-n { fill: var(--ink2); font-family: var(--display); }
+   Lite (white land, grey water and roads) with a small compass in its corner, then the readings,
+   the point of sail and the sailing keys. */
+.inst { right: max(14px, env(safe-area-inset-right)); bottom: 14px; width: 300px; padding: 0.55rem 0.6rem 0.5rem; }
+.chart { position: relative; height: 184px; overflow: hidden; border: 1px solid var(--rule); background: #dcdcdc; }
+.chart canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.chart .boat { position: absolute; left: 50%; top: 50%; overflow: visible; }
+.chart .rose { position: absolute; right: 5px; top: 5px; width: 34px; height: 34px; color: var(--ink3); }
+.inst .rose-n { fill: var(--ink); font-family: var(--display); }
+.inst .needle-n { fill: var(--ink); }
+.inst .needle-s { fill: var(--ink3); }
 .inst .wind { fill: var(--accent); }
+.inst .wind-arrow { width: 0.75rem; height: 0.75rem; margin-left: 0.15rem; vertical-align: -0.1rem; }
 .inst .hull { fill: var(--ink); stroke: #fff; stroke-width: 2.6; paint-order: stroke; }
-.inst .course { stroke: var(--accent); stroke-width: 0.6; stroke-dasharray: 2 1.6; }
-.inst dl { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem 0.6rem; margin-top: 0.45rem; }
+.inst .course { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; }
+.inst dl { display: grid; grid-template-columns: repeat(4, auto); justify-content: space-between; gap: 0.25rem 0.6rem; margin-top: 0.45rem; }
 .inst dt { font-size: 0.66rem; line-height: 1.2; color: var(--ink2); }
-.inst dd { font-family: var(--mono); font-size: 0.8rem; line-height: 1.3; }
-.inst .foot { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; margin-top: 0.4rem; padding-top: 0.3rem; border-top: 1px solid var(--rule); }
+.inst dd { font-family: var(--mono); font-size: 0.78rem; line-height: 1.3; white-space: nowrap; }
+.inst .foot { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; margin-top: 0.35rem; padding-top: 0.3rem; border-top: 1px solid var(--rule); }
 .inst .pos { font-family: var(--display); font-style: italic; font-size: 0.88rem; color: var(--ink); }
 .inst .osm { font-size: 0.6rem; color: var(--ink3); white-space: nowrap; }
-
-.hint {
-  left: 50%; transform: translateX(-50%); top: 14px; padding: 0.4rem 0.8rem; font-size: 0.74rem; color: var(--ink2);
-  white-space: nowrap; display: flex; gap: 1.1rem;
-}
-.hint kbd { font-family: var(--mono); font-size: 0.7rem; color: var(--ink); border: 1px solid var(--rule); border-radius: 2px; padding: 0 0.3rem; }
+/* Sailing keys: a row above the controls, in Sail mode only. */
+.keys { display: flex; flex-wrap: wrap; gap: 0.2rem 1.1rem; margin-bottom: 0.4rem; padding-bottom: 0.35rem; border-bottom: 1px solid var(--rule); font-size: 0.74rem; color: var(--ink2); }
+.keys kbd { font-family: var(--mono); font-size: 0.7rem; color: var(--ink); border: 1px solid var(--rule); border-radius: 2px; padding: 0 0.3rem; }
 
 /* Touch steering. */
 .rudder { position: absolute; left: 0; right: 0; bottom: 150px; display: flex; justify-content: space-between; padding: 0 14px; pointer-events: none; }
@@ -148,12 +149,14 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
   .sky .trees-field { display: none; }
   .stage.sailing .sky { max-width: calc(100% - 28px); }
   .mast .sub { display: none; }
-  .hint { display: none; }
+  .keys { display: none; }
   .controls { gap: 0.5rem 1rem; }
   .field.time { flex-basis: 100%; }
   .field.time input[type=range] { flex: 1; width: auto; }
   .credits { display: none; }
-  .inst { bottom: auto; top: 14px; width: 150px; padding: 0.45rem 0.5rem 0.4rem; }
+  .inst { bottom: auto; top: 14px; width: 200px; padding: 0.45rem 0.5rem 0.4rem; }
+  .chart { height: 120px; }
+  .inst dl { grid-template-columns: auto auto; }
   .inst dd { font-size: 0.72rem; }
 }
 @media (prefers-reduced-motion: reduce) { #loader { transition: none; } }
@@ -177,6 +180,7 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
   <div id="labels"></div>
 
   <section class="panel sky" aria-label="Controls">
+    <div class="keys" id="keys" hidden><span><kbd>A</kbd> <kbd>D</kbd> steer</span><span><kbd>E</kbd> motor</span><span><kbd>B</kbd> hold to boost</span><span>Drag to orbit</span><span>Scroll to zoom</span></div>
     <div class="controls">
     <div class="field time">
       <label for="tod">Time of day</label>
@@ -218,31 +222,32 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
   <section class="panel inst" id="inst" hidden aria-label="Chart and instruments">
     <div class="chart">
       <canvas id="map" aria-hidden="true"></canvas>
-      <svg viewBox="-50 -50 100 100" aria-hidden="true">
-        <!-- North-up: the map shows inside r 44, the compass ring is 44 to 50. Ticks are added by script. -->
-        <g id="rose" fill="none" stroke="currentColor" stroke-width="0.5">
-          <circle r="44"/>
-          <circle r="50"/>
-          <text class="rose-n" y="-47" text-anchor="middle" dominant-baseline="central" font-size="5.6" stroke="none">N</text>
-        </g>
-        <!-- Points inward from where the wind blows. -->
-        <g id="windArrow"><path class="wind" d="M0 -44.5 L3.2 -49.6 L-3.2 -49.6 Z"/></g>
+      <!-- The boat sits at the centre; its course line runs to the edge of the map. -->
+      <svg class="boat" width="1" height="1" aria-hidden="true">
         <g id="boatMark">
-          <line class="course" y1="-7" y2="-43.5"/>
-          <path class="hull" transform="scale(0.42)" d="M0 -13 C4.5 -6 4.6 5 3.3 11 L-3.3 11 C-4.6 5 -4.5 -6 0 -13 Z"/>
+          <line class="course" y1="-12" y2="-400"/>
+          <path class="hull" transform="scale(0.8)" d="M0 -13 C4.5 -6 4.6 5 3.3 11 L-3.3 11 C-4.6 5 -4.5 -6 0 -13 Z"/>
         </g>
+      </svg>
+      <!-- The map is north-up. -->
+      <svg class="rose" viewBox="-17 -17 34 34" aria-hidden="true">
+        <circle r="16" fill="rgba(255,255,255,0.88)" stroke="currentColor" stroke-width="0.8"/>
+        <path d="M16 0 H13 M0 16 V13 M-16 0 H-13" stroke="currentColor" stroke-width="0.8"/>
+        <text class="rose-n" y="-10.5" text-anchor="middle" dominant-baseline="central" font-size="6.5">N</text>
+        <path class="needle-n" d="M0 -6.5 L2.6 1 L-2.6 1 Z"/>
+        <path class="needle-s" d="M0 8.5 L2.6 1 L-2.6 1 Z"/>
       </svg>
     </div>
     <dl>
       <div><dt>Heading</dt><dd id="r-hdg">270&deg; W</dd></div>
       <div><dt>Speed</dt><dd id="r-spd">0.0 kn</dd></div>
-      <div><dt>Wind</dt><dd id="r-wind">14 kn WNW</dd></div>
+      <div><dt>Wind</dt><dd><span id="r-wind">14 kn WNW</span>
+        <!-- Points the way the wind blows. -->
+        <svg class="wind-arrow" viewBox="-6 -6 12 12" aria-hidden="true"><path id="windArrow" class="wind" d="M0 5.5 L3.6 0 L1.1 0.9 L1.1 -5.5 L-1.1 -5.5 L-1.1 0.9 L-3.6 0 Z"/></svg></dd></div>
       <div><dt>Depth</dt><dd id="r-dep">&ndash; m</dd></div>
     </dl>
     <div class="foot"><p class="pos" id="r-pos">Beam reach</p><span class="osm">&copy; OpenStreetMap</span></div>
   </section>
-
-  <div class="panel hint" id="hint" hidden><span><kbd>A</kbd> <kbd>D</kbd> steer</span><span><kbd>E</kbd> motor</span><span><kbd>B</kbd> hold to boost</span><span>Drag to orbit</span><span>Scroll to zoom</span></div>
 
   <div class="rudder" id="rudder" hidden>
     <button type="button" id="rud-l" aria-label="Steer to port">&#8630;</button>
@@ -1052,7 +1057,7 @@ function updateSail(dt, time) {
   if (state.mode !== 'sail') return; // instruments are hidden
   const hdg = Math.round(sail.hdg) % 360;
   setText('#r-hdg', `${String(hdg).padStart(3, '0')}° ${compass(sail.hdg)}`);
-  setText('#r-spd', `${sail.kn.toFixed(1)} kn`);
+  setText('#r-spd', `${Math.max(0, sail.kn).toFixed(1)} kn`);
   setText('#r-wind', `${WIND_KN} kn ${compass(WIND_FROM)}`);
   const dep = -sampleH(sail.x, sail.z);
   setText('#r-dep', dep >= 299 ? '300+ m' : `${Math.max(0, dep).toFixed(0)} m`);
@@ -1079,7 +1084,7 @@ function setMode(m) {
   $('#mode-sail').setAttribute('aria-pressed', String(m === 'sail'));
   $('#inst').hidden = m !== 'sail';
   $('#rudder').hidden = !(m === 'sail' && coarse);
-  $('#hint').hidden = m !== 'sail'; // only the sailing keys need explaining
+  $('#keys').hidden = m !== 'sail'; // only the sailing keys need explaining
   stage.classList.toggle('sailing', m === 'sail');
   look.yaw = 0; look.pitch = 0;
   if (m === 'sail') look.dist = SAIL_VIEW_DIST;
