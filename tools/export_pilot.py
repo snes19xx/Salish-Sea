@@ -25,9 +25,6 @@ MAP_MARGIN_M = 1000  # beyond the detail grid
 MAP_SIMPLIFY_M = 5
 MIN_LAKE_M2 = 3000
 ROAD_CLASS = {"motorway": "major", "trunk": "major", "primary": "main", "secondary": "main"}
-# Minimap labels, most important first; the browser drops any that collide with earlier ones.
-MAP_LABEL_KINDS = [("town", {"town", "village"}), ("water", {"strait"}), ("place", {"suburb", "hamlet"}),
-                   ("island", {"island"}), ("bay", {"bay"})]
 
 
 def world_xz(lon, lat, e0, n0):
@@ -72,29 +69,28 @@ def export_map(area, src_transform, rows, cols, e0, n0):
             if ln.geom_type == "LineString" and not ln.is_empty:
                 roads[kind].append(flat_coords(ln.coords, e0, n0))
 
-    # The area's own land and water labels come first, then OSM places by importance.
+    # Only well-known names: the area's own land and water labels, then any other OSM towns.
     places = json.loads((area.vectors / "places_osm.geojson").read_text())["features"]
-    towns = {f["properties"]["name"] for f in places if f["properties"]["place"] in ("town", "village")}
+    capes = {f["properties"]["name"] for f in places if f["properties"]["natural"] == "cape"}
     labels, seen = [], set()
     for name, kind, _, lonlat in area.labels:
         lonlat = lonlat or find_place(places, name)
         if kind == "peak" or lonlat is None:
             continue
         if kind != "water":
-            kind = "island" if name.endswith("Island") else "town" if name in towns else "place"
+            kind = "island" if "Island" in name else "place" if name in capes else "town"
         x, z = world_xz(*lonlat, e0, n0)
         labels.append({"name": name, "kind": kind, "x": round(x), "z": round(z)})
         seen.add(name)
-    for kind, tags in MAP_LABEL_KINDS:
-        for f in places:
-            p = f["properties"]
-            if p["name"] in seen or (p["place"] or p["natural"]) not in tags:
-                continue
-            x, z = world_xz(*f["geometry"]["coordinates"], e0, n0)
-            e, n = x + e0, n0 - z
-            if clip.contains(box(e, n, e, n)):
-                labels.append({"name": p["name"], "kind": kind, "x": round(x), "z": round(z)})
-                seen.add(p["name"])
+    for f in places:
+        p = f["properties"]
+        if p["name"] in seen or p["place"] not in ("town", "village"):
+            continue
+        x, z = world_xz(*f["geometry"]["coordinates"], e0, n0)
+        e, n = x + e0, n0 - z
+        if clip.contains(box(e, n, e, n)):
+            labels.append({"name": p["name"], "kind": "town", "x": round(x), "z": round(z)})
+            seen.add(p["name"])
 
     minx, miny, maxx, maxy = clip.bounds
     out = {"extent": [round(minx - e0), round(n0 - maxy), round(maxx - e0), round(n0 - miny)],

@@ -1195,36 +1195,24 @@ function resize() {
 new ResizeObserver(resize).observe(stage); // window resizes, and the masthead wrapping to two lines
 
 
-/* ---------- compass ring ticks: every 10 degrees, longer every 30 ---------- */
-{
-  const rose = $('#rose'), NS = 'http://www.w3.org/2000/svg';
-  for (let a = 0; a < 360; a += 10) {
-    if (a === 0) continue; // north has its own mark
-    const r0 = a % 30 === 0 ? 45.5 : 47.5, t = a * Math.PI / 180, l = document.createElementNS(NS, 'line');
-    l.setAttribute('x1', (Math.sin(t) * r0).toFixed(2)); l.setAttribute('y1', (-Math.cos(t) * r0).toFixed(2));
-    l.setAttribute('x2', (Math.sin(t) * 50).toFixed(2)); l.setAttribute('y2', (-Math.cos(t) * 50).toFixed(2));
-    rose.appendChild(l);
-  }
-}
-
 /* ---------- minimap ----------
    Toner Lite style: white land, grey water, roads in three greys, dashed ferries, dark labels
-   with a white halo. pilot_map.json (tools/export_pilot.py) is drawn once into an offscreen
-   canvas at the display scale; each frame copies the window around the boat into #map, only
-   when the boat has moved a device pixel. */
-const MAP_MPP = 38; // metres per CSS pixel: about 3 km from the boat to the ring
+   with a white halo. pilot_map.json (tools/export_pilot.py) is drawn once, without labels, into
+   an offscreen canvas at the display scale. Whenever the boat has moved a device pixel, the window
+   around it is copied into #map and the labels in view are placed on top, nudged inside the edges
+   and skipped where they would overlap a more important one. */
+const MAP_MPP = 45; // metres per CSS pixel: the map spans about 12 x 8 km
 const MAP_DPR = Math.min(2, window.devicePixelRatio || 1);
 const MAP_WATER = '#dcdcdc', MAP_LAND = '#ffffff';
 const MAP_ROADS = [['minor', '#c8c8c8', 0.6], ['main', '#acacac', 1], ['major', '#808080', 1.5]];
-// Font, colour; in priority order for placing labels (export order breaks ties).
+// Font and colour per kind, in priority order for placing labels.
 const MAP_LABELS = {
-  town: ['600 11px "Public Sans"', '#1c1c1c'],
-  water: ['italic 400 9.5px "Public Sans"', '#767676'],
-  island: ['500 9.5px "Public Sans"', '#3c3c3c'],
-  place: ['500 9px "Public Sans"', '#4c4c4c'],
-  bay: ['italic 400 8.5px "Public Sans"', '#8c8c8c']
+  town: ['600 11.5px "Public Sans"', '#1c1c1c'],
+  island: ['500 11px "Public Sans"', '#2e2e2e'],
+  water: ['italic 400 10px "Public Sans"', '#727272'],
+  place: ['500 10px "Public Sans"', '#4c4c4c']
 };
-const MAP = { base: null, minX: 0, minZ: 0, s: 1, view: $('#map'), last: '' };
+const MAP = { base: null, labels: [], minX: 0, minZ: 0, s: 1, view: $('#map'), last: '' };
 MAP.ctx = MAP.view.getContext('2d');
 
 async function loadMap() {
@@ -1261,38 +1249,50 @@ async function loadMap() {
   for (const [kind, colour, px] of MAP_ROADS) strokeLines(m.roads[kind], colour, px);
   strokeLines(m.roads.ferry, '#a2a2a2', 0.8, [3, 2.5]);
   ctx.setLineDash([]);
-  // Labels in CSS pixels, skipping any that would touch one already placed.
-  ctx.setTransform(MAP_DPR, 0, 0, MAP_DPR, 0, 0);
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.92)';
-  const placed = [];
-  for (const kind of Object.keys(MAP_LABELS)) {
-    const [font, colour] = MAP_LABELS[kind];
-    ctx.font = font; ctx.fillStyle = colour;
-    for (const l of m.labels) {
-      if (l.kind !== kind) continue;
-      const x = (l.x - x0) / MAP_MPP, y = (l.z - z0) / MAP_MPP, w = ctx.measureText(l.name).width / 2 + 3, h = 8;
-      if (placed.some(b => x - w < b[2] && x + w > b[0] && y - h < b[3] && y + h > b[1])) continue;
-      placed.push([x - w, y - h, x + w, y + h]);
-      ctx.strokeText(l.name, x, y); ctx.fillText(l.name, x, y);
-    }
-  }
-  Object.assign(MAP, { base, minX: x0, minZ: z0, s, last: '' });
+  // Label widths in CSS pixels, measured once; most important kinds first.
+  const kinds = Object.keys(MAP_LABELS);
+  const labels = m.labels.filter(l => l.kind in MAP_LABELS).sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind));
+  for (const l of labels) { ctx.font = MAP_LABELS[l.kind][0]; l.hw = ctx.measureText(l.name).width / 2; }
+  Object.assign(MAP, { base, labels, minX: x0, minZ: z0, s, last: '' });
 }
 // Size the view canvas to its CSS box (it has none while the panel is hidden).
 new ResizeObserver(() => {
-  const w = Math.round(MAP.view.clientWidth * MAP_DPR);
-  if (w > 0 && w !== MAP.view.width) { MAP.view.width = MAP.view.height = w; MAP.last = ''; }
+  const v = MAP.view, w = Math.round(v.clientWidth * MAP_DPR), h = Math.round(v.clientHeight * MAP_DPR);
+  if (w > 0 && h > 0 && (w !== v.width || h !== v.height)) { v.width = w; v.height = h; MAP.last = ''; }
 }).observe(MAP.view);
 function updateMap() {
-  const { base, view, ctx } = MAP, n = view.width;
-  if (!base || n < 2) return;
-  const sx = Math.round((sail.x - MAP.minX) * MAP.s - n / 2), sy = Math.round((sail.z - MAP.minZ) * MAP.s - n / 2);
+  const { base, view, ctx } = MAP, w = view.width, h = view.height;
+  if (!base || w < 2 || h < 2) return;
+  const sx = Math.round((sail.x - MAP.minX) * MAP.s - w / 2), sy = Math.round((sail.z - MAP.minZ) * MAP.s - h / 2);
   const key = sx + ',' + sy;
   if (key === MAP.last) return;
   MAP.last = key;
-  ctx.fillStyle = MAP_WATER; ctx.fillRect(0, 0, n, n);
-  const x0 = Math.max(0, sx), y0 = Math.max(0, sy), x1 = Math.min(base.width, sx + n), y1 = Math.min(base.height, sy + n);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = MAP_WATER; ctx.fillRect(0, 0, w, h);
+  const x0 = Math.max(0, sx), y0 = Math.max(0, sy), x1 = Math.min(base.width, sx + w), y1 = Math.min(base.height, sy + h);
   if (x1 > x0 && y1 > y0) ctx.drawImage(base, x0, y0, x1 - x0, y1 - y0, x0 - sx, y0 - sy, x1 - x0, y1 - y0);
+  // Labels in CSS pixels. The compass corner and the boat are kept clear: a label on the boat
+  // moves to just below or above it.
+  ctx.setTransform(MAP_DPR, 0, 0, MAP_DPR, 0, 0);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+  const W = w / MAP_DPR, H = h / MAP_DPR, ox = sx / MAP_DPR, oy = sy / MAP_DPR, hh = 8;
+  const placed = [[W - 44, 0, W, 44], [W / 2 - 12, H / 2 - 12, W / 2 + 12, H / 2 + 12]];
+  const free = (x, y, hw) => !placed.some(b => x - hw < b[2] && x + hw > b[0] && y - hh < b[3] && y + hh > b[1]);
+  for (const l of MAP.labels) {
+    let x = (l.x - MAP.minX) / MAP_MPP - ox, y = (l.z - MAP.minZ) / MAP_MPP - oy;
+    if (x < 0 || x > W || y < 0 || y > H) continue;
+    const hw = l.hw + 3;
+    x = Math.min(Math.max(x, hw), W - hw); y = Math.min(Math.max(y, hh), H - hh);
+    if (!free(x, y, hw)) {
+      const onBoat = Math.abs(x - W / 2) < hw + 12 && Math.abs(y - H / 2) < hh + 12;
+      y = onBoat ? [H / 2 + 12 + hh, H / 2 - 12 - hh].find(yy => free(x, yy, hw)) : undefined;
+      if (y === undefined) continue;
+    }
+    placed.push([x - hw, y - hh, x + hw, y + hh]);
+    const [font, colour] = MAP_LABELS[l.kind];
+    ctx.font = font; ctx.fillStyle = colour;
+    ctx.strokeText(l.name, x, y); ctx.fillText(l.name, x, y);
+  }
 }
 
 /* ---------- build world ---------- */
