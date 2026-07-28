@@ -122,8 +122,8 @@ AREAS = {
             (-123.443, 49.423, 70), (-123.422, 49.394, 70), (-123.437, 49.366, 70),
             (-123.436, 49.339, 80), (-123.400, 49.331, 90), (-123.355, 49.332, 90),
         ],
-        boat=(-123.303, 49.379, 285),  # Queen Charlotte Channel, west of Whytecliff
-        boat_where="off Horseshoe Bay",
+        boat=(-123.2722, 49.3778, 350),  # mid-bay, 29 m deep
+        boat_where="in Horseshoe Bay",
         wind_from=190,  # summer afternoon inflow up Howe Sound
         wind_kn=14,
     ),
