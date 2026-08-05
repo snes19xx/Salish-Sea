@@ -625,7 +625,8 @@ const waterU = {
   // Wake (see WAKE below): the boat's recent track points (x, z, time dropped, strength), the
   // sailing clock, and the boat's position.
   uTrack: { value: [] }, uTrackS: { value: [] }, uWakeClock: { value: 0 }, uWakeBoat: { value: new THREE.Vector4() },
-  uWakeV: { value: 3.6 }
+  uWakeV: { value: 3.6 },
+  uChunk: { value: [] } // a bounding circle per 8 track segments (x, z, radius, 1 if any are live)
 };
 const waterMat = new THREE.ShaderMaterial({
   uniforms: { ...U, ...waterU },
@@ -639,6 +640,7 @@ const waterMat = new THREE.ShaderMaterial({
     uniform sampler2D tRefl; uniform sampler2D tHeight; uniform vec4 hB; uniform vec2 hN; uniform vec2 uWindDir;
     uniform float uWaveAmp; uniform vec4 uBoat; uniform float uBoatScale; uniform float fogDensity; uniform float uTime; uniform vec3 ambGround;
     uniform vec4 uTrack[96]; uniform float uTrackS[96]; uniform float uWakeClock; uniform vec4 uWakeBoat; uniform float uWakeV;
+    uniform vec4 uChunk[12];
     // One Kelvin wave system at (x behind, y beside) for direction tan t: slope (d/dx, d/dy) of a
     // wave of unit slope amplitude, given K0 = g / v^2. The phase gradient is the wave vector.
     vec2 kelvinSlope(float x, float y, float t, float K0, out float k){
@@ -682,28 +684,41 @@ const waterMat = new THREE.ShaderMaterial({
       if (dot(fromBoat, fromBoat) < 400.0 * 400.0) {
         float best = 1e12, wx = 0.0, wy = 0.0, wAge = 0.0, wStr = 0.0, trail = 0.0;
         vec2 wFwd = vec2(0.0, -1.0);
-        vec4 prev = uTrack[95]; float prevS = uTrackS[95]; // ring buffer: walk consecutive pairs
-        for (int j = 0; j < 96; j++) {
-          vec4 s = uTrack[j]; float sS = uTrackS[j];
-          vec4 p0 = prev; float p0S = prevS; prev = s; prevS = sS;
-          vec2 seg = s.xy - p0.xy; float sl = dot(seg, seg);
-          // Skip empty slots and the buffer's seam (newest -> oldest), which isn't a real segment.
-          if (s.w <= 0.0 || p0.w <= 0.0 || sS <= p0S || sl > 4.0 * uWakeBoat.z * uWakeBoat.z + 4.0) continue;
-          float t = clamp(dot(vW.xz - p0.xy, seg) / sl, 0.0, 1.0);
-          vec2 off = vW.xz - (p0.xy + seg * t);
-          float d2 = dot(off, off);
-          float age = uWakeClock - mix(p0.z, s.z, t);
-          if (d2 < best) {
-            best = d2;
-            vec2 f = seg / sqrt(sl);
-            wFwd = f;
-            wx = uWakeBoat.w - mix(p0S, sS, t);
-            wy = dot(off, vec2(-f.y, f.x));
-            wAge = age; wStr = mix(p0.w, s.w, t);
+        // The segments come in 12 chunks of 8, each with a bounding circle. The nearest chunk
+        // edge plus its radius bounds the distance to the nearest segment; a chunk further than
+        // that (and too far for the foam trail) can't change the result, so it is skipped.
+        float ub = 1e6, trailR = 6.0 * uBoatScale;
+        for (int c = 0; c < 12; c++) {
+          vec4 b = uChunk[c];
+          if (b.w > 0.0) ub = min(ub, length(vW.xz - b.xy) + b.z);
+        }
+        for (int c = 0; c < 12; c++) {
+          vec4 b = uChunk[c];
+          if (b.w <= 0.0 || length(vW.xz - b.xy) - b.z > max(min(ub, sqrt(best)), trailR)) continue;
+          for (int k = 0; k < 8; k++) {
+            int j = c * 8 + k, i = j - 1; // ring buffer: segment from point i to point j
+            if (i < 0) i = 95;
+            vec4 s = uTrack[j]; float sS = uTrackS[j];
+            vec4 p0 = uTrack[i]; float p0S = uTrackS[i];
+            vec2 seg = s.xy - p0.xy; float sl = dot(seg, seg);
+            // Skip empty slots and the buffer's seam (newest -> oldest), which isn't a real segment.
+            if (s.w <= 0.0 || p0.w <= 0.0 || sS <= p0S || sl > 4.0 * uWakeBoat.z * uWakeBoat.z + 4.0) continue;
+            float t = clamp(dot(vW.xz - p0.xy, seg) / sl, 0.0, 1.0);
+            vec2 off = vW.xz - (p0.xy + seg * t);
+            float d2 = dot(off, off);
+            float age = uWakeClock - mix(p0.z, s.z, t);
+            if (d2 < best) {
+              best = d2;
+              vec2 f = seg / sqrt(sl);
+              wFwd = f;
+              wx = uWakeBoat.w - mix(p0S, sS, t);
+              wy = dot(off, vec2(-f.y, f.x));
+              wAge = age; wStr = mix(p0.w, s.w, t);
+            }
+            // Turbulent water behind the hull: a narrow trail that spreads and fades over ~10 s.
+            float w = (1.1 + 0.10 * age) * uBoatScale;
+            trail = max(trail, min(s.w, 1.6) * exp(-d2 / (w * w)) * exp(-age / 8.0) * smoothstep(0.0, 0.3, age));
           }
-          // Turbulent water behind the hull: a narrow trail that spreads and fades over ~10 s.
-          float w = (1.1 + 0.10 * age) * uBoatScale;
-          trail = max(trail, min(s.w, 1.6) * exp(-d2 / (w * w)) * exp(-age / 8.0) * smoothstep(0.0, 0.3, age));
         }
         vec2 grad = vec2(0.0); float steep = 0.0;
         float ratio = abs(wy) / max(wx, 1e-3);
@@ -803,12 +818,38 @@ water.renderOrder = 4;
    shader finds each pixel's nearest track segment. A narrow turbulent foam trail uses the same
    segments. The wave pattern uses the sailing-clock speed, capped at WAKE.vMax so the boost wake
    keeps visible ripples instead of becoming one long, flat swell. */
-const WAKE = { n: 96, spacing: 1.6, vMax: 7.0 };
+const WAKE = { n: 96, spacing: 1.6, vMax: 7.0, maxAge: 240 };
 const wakeTrack = Array.from({ length: WAKE.n }, () => new THREE.Vector4(0, 0, -1e6, 0));
 const wakeDist = new Array(WAKE.n).fill(0); // distance travelled when each point was dropped
 let wakeHead = 0, wakeClock = 0, wakeLast = null, wakeTravel = 0;
 waterU.uTrack.value = wakeTrack;
 waterU.uTrackS.value = wakeDist;
+const wakeChunks = Array.from({ length: WAKE.n / 8 }, () => new THREE.Vector4());
+waterU.uChunk.value = wakeChunks;
+// A bounding circle around each chunk of 8 segments, using the same test as the shader for which
+// segments are real. Segments older than WAKE.maxAge have faded out (their waves are below
+// 0.3% of full strength, the foam gone), so they don't count.
+function updateWakeChunks() {
+  const lim = 4 * WAKE.spacing * WAKE.spacing + 4;
+  for (let c = 0; c < wakeChunks.length; c++) {
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    const live = [];
+    for (let k = 0; k < 8; k++) {
+      const j = c * 8 + k, i = (j + WAKE.n - 1) % WAKE.n;
+      const s = wakeTrack[j], p = wakeTrack[i];
+      if (s.w <= 0 || p.w <= 0 || wakeDist[j] <= wakeDist[i] || wakeClock - s.z > WAKE.maxAge) continue;
+      if ((s.x - p.x) ** 2 + (s.y - p.y) ** 2 > lim) continue;
+      live.push(p, s);
+      x0 = Math.min(x0, p.x, s.x); x1 = Math.max(x1, p.x, s.x);
+      z0 = Math.min(z0, p.y, s.y); z1 = Math.max(z1, p.y, s.y);
+    }
+    if (!live.length) { wakeChunks[c].set(0, 0, 0, 0); continue; }
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    let r = 0;
+    for (const p of live) r = Math.max(r, Math.hypot(p.x - cx, p.y - cz));
+    wakeChunks[c].set(cx, cz, r + 0.01, 1);
+  }
+}
 function updateWake(dt) {
   wakeClock += Math.min(dt, 0.05) * TIMEX;
   waterU.uWakeClock.value = wakeClock;
@@ -831,6 +872,7 @@ function updateWake(dt) {
   // Boat position, point spacing, distance travelled at the boat, and the wave speed.
   waterU.uWakeBoat.value.set(sail.x, sail.z, WAKE.spacing, wakeTravel + d);
   waterU.uWakeV.value = Math.min(Math.max(v, 1.5), WAKE.vMax);
+  updateWakeChunks();
 }
 scene.add(water);
 
