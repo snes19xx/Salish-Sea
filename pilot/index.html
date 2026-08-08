@@ -1824,7 +1824,7 @@ updateSky();
 setMode('fly');
 // ?debug exposes camera controls for scripted screenshots.
 if (params.has('debug')) window.pilot = {
-  look, sail, state, setMode, U, forest: FOREST, renderer, scene, renderMain, renderReflection,
+  look, sail, state, setMode, U, forest: FOREST, renderer, scene, camera, renderMain, renderReflection,
   setFly: u => { flyU = u; camInit = false; },
   // Average milliseconds per frame (reflection + main pass), waiting for the GPU each frame.
   bench(frames = 60) {
