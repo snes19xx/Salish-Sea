@@ -220,7 +220,7 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
   </section>
 
   <section class="panel inst" id="inst" hidden aria-label="Chart and instruments">
-    <div class="chart">
+    <div class="chart" id="minimap" title="Scroll to zoom; click for the chart (M)">
       <canvas id="map" aria-hidden="true"></canvas>
       <!-- The boat sits at the centre; its course line runs to the edge of the map. -->
       <svg class="boat" width="1" height="1" aria-hidden="true">
@@ -1239,16 +1239,22 @@ function resize() {
 new ResizeObserver(resize).observe(stage); // window resizes, and the masthead wrapping to two lines
 
 
-/* ---------- minimap ----------
+/* ---------- minimap and chart ----------
    Toner Lite style: white land, grey water, roads in three greys, dashed ferries, dark labels
-   with a white halo. pilot_map.json (tools/export_pilot.py) is drawn once, without labels, into
-   an offscreen canvas at the display scale. Whenever the boat has moved a device pixel, the window
-   around it is copied into #map and the labels in view are placed on top, nudged inside the edges
-   and skipped where they would overlap a more important one. */
-const MAP_MPP = 45; // metres per CSS pixel: the map spans about 12 x 8 km
+   with a white halo. pilot_map.json (tools/export_pilot.py) is turned into world-space paths once;
+   every view draws those paths at its own scale, so the map stays sharp at any zoom. Labels are
+   placed on top, nudged inside the edges and skipped where they would overlap a more important one.
+   Minimap: north-up around the boat; the scroll wheel zooms it. Rather than redraw the paths every
+   frame, it draws a patch three times its size around the boat and copies the view out of it,
+   redrawing the patch only when the boat nears its edge or the zoom changes.
+   Chart (M, or a click on the minimap): the whole area in a large panel. Scroll zooms about the
+   cursor, drag moves it, and a click on open water sails the boat there (fast travel). */
+const MAP_MPP = 45; // the minimap's starting scale, metres per CSS pixel: about 12 x 8 km
+const MAP_ZOOM = [10, 120]; // the minimap's range of scales
 const MAP_DPR = Math.min(2, window.devicePixelRatio || 1);
-const MAP_WATER = '#dcdcdc', MAP_LAND = '#ffffff';
+const MAP_WATER = '#dcdcdc', MAP_LAND = '#ffffff', MAP_OFF = '#ece9e2'; // off the map: paper
 const MAP_ROADS = [['minor', '#c8c8c8', 0.6], ['main', '#acacac', 1], ['major', '#808080', 1.5]];
+const MAP_MINOR_MPP = 70; // minor roads only when closer than this (zoomed out, they're clutter)
 // Font and colour per kind, in priority order for placing labels.
 const MAP_LABELS = {
   town: ['600 11.5px "Public Sans"', '#1c1c1c'],
@@ -1256,7 +1262,7 @@ const MAP_LABELS = {
   water: ['italic 400 10px "Public Sans"', '#727272'],
   place: ['500 10px "Public Sans"', '#4c4c4c']
 };
-const MAP = { base: null, labels: [], minX: 0, minZ: 0, s: 1, view: $('#map'), last: '' };
+const MAP = { layers: null, labels: [], extent: null, view: $('#map'), mpp: MAP_MPP, patch: null, last: '' };
 MAP.ctx = MAP.view.getContext('2d');
 
 async function loadMap() {
@@ -1264,40 +1270,91 @@ async function loadMap() {
   if (!r.ok) throw new Error(`${DATA}pilot_map.json: HTTP ${r.status}`);
   const m = await r.json();
   await Promise.all(Object.values(MAP_LABELS).map(([font]) => document.fonts.load(font)));
-  const [x0, z0, x1, z1] = m.extent, s = MAP_DPR / MAP_MPP; // device pixels per metre
-  const base = document.createElement('canvas');
-  base.width = Math.ceil((x1 - x0) * s); base.height = Math.ceil((z1 - z0) * s);
-  const ctx = base.getContext('2d');
-  ctx.fillStyle = MAP_WATER; ctx.fillRect(0, 0, base.width, base.height);
-  // Geometry in world metres; line widths are given in CSS pixels.
-  ctx.setTransform(s, 0, 0, s, -x0 * s, -z0 * s);
-  const trace = (path, pts, close) => {
-    path.moveTo(pts[0], pts[1]);
-    for (let i = 2; i < pts.length; i += 2) path.lineTo(pts[i], pts[i + 1]);
-    if (close) path.closePath();
-  };
-  const fillPolys = (polys, colour) => {
+  // One path per layer, in world metres.
+  const path = (lines, close) => {
     const p = new Path2D();
-    for (const rings of polys) for (const ring of rings) trace(p, ring, true);
-    ctx.fillStyle = colour; ctx.fill(p, 'evenodd');
+    for (const pts of lines) {
+      p.moveTo(pts[0], pts[1]);
+      for (let i = 2; i < pts.length; i += 2) p.lineTo(pts[i], pts[i + 1]);
+      if (close) p.closePath();
+    }
+    return p;
   };
-  fillPolys(m.land, MAP_LAND);
-  fillPolys(m.lakes, MAP_WATER);
-  ctx.lineCap = ctx.lineJoin = 'round';
-  const strokeLines = (lines, colour, px, dash = []) => {
-    const p = new Path2D();
-    for (const ln of lines) trace(p, ln, false);
-    ctx.strokeStyle = colour; ctx.lineWidth = px * MAP_MPP; ctx.setLineDash(dash.map(d => d * MAP_MPP));
-    ctx.stroke(p);
+  const layers = {
+    land: path(m.land.flat(), true), lakes: path(m.lakes.flat(), true),
+    roads: Object.fromEntries(Object.entries(m.roads).map(([kind, lines]) => [kind, path(lines, false)]))
   };
-  for (const [kind, colour, px] of MAP_ROADS) strokeLines(m.roads[kind], colour, px);
-  strokeLines(m.roads.ferry, '#a2a2a2', 0.8, [3, 2.5]);
-  ctx.setLineDash([]);
   // Label widths in CSS pixels, measured once; most important kinds first.
   const kinds = Object.keys(MAP_LABELS);
   const labels = m.labels.filter(l => l.kind in MAP_LABELS).sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind));
-  for (const l of labels) { ctx.font = MAP_LABELS[l.kind][0]; l.hw = ctx.measureText(l.name).width / 2; }
-  Object.assign(MAP, { base, labels, minX: x0, minZ: z0, s, last: '' });
+  for (const l of labels) { MAP.ctx.font = MAP_LABELS[l.kind][0]; l.hw = MAP.ctx.measureText(l.name).width / 2; }
+  Object.assign(MAP, { layers, labels, extent: m.extent, patch: null, last: '' });
+  BIGMAP.dirty = true;
+}
+// Draw the map into ctx (w x h device pixels) with world point (x0, z0) at the top-left corner,
+// at mpp metres per CSS pixel. Line widths and dashes are in CSS pixels at every scale.
+function drawMapArea(ctx, w, h, x0, z0, mpp) {
+  const L = MAP.layers, s = MAP_DPR / mpp; // device pixels per metre
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = MAP_WATER; ctx.fillRect(0, 0, w, h);
+  ctx.setTransform(s, 0, 0, s, -x0 * s, -z0 * s);
+  ctx.fillStyle = MAP_LAND; ctx.fill(L.land, 'evenodd');
+  ctx.fillStyle = MAP_WATER; ctx.fill(L.lakes, 'evenodd');
+  ctx.lineCap = ctx.lineJoin = 'round';
+  const stroke = (p, colour, px, dash = []) => {
+    ctx.strokeStyle = colour; ctx.lineWidth = px * mpp; ctx.setLineDash(dash.map(d => d * mpp)); ctx.stroke(p);
+  };
+  for (const [kind, colour, px] of MAP_ROADS) if (kind !== 'minor' || mpp < MAP_MINOR_MPP) stroke(L.roads[kind], colour, px);
+  stroke(L.roads.ferry, '#a2a2a2', 0.8, [3, 2.5]);
+  ctx.setLineDash([]);
+  // Beyond the mapped area there is no data: paper with a hairline edge, not grey water.
+  const [ex0, ez0, ex1, ez1] = MAP.extent, x1 = x0 + w / s, z1 = z0 + h / s;
+  if (x0 < ex0 || z0 < ez0 || x1 > ex1 || z1 > ez1) {
+    const off = new Path2D();
+    off.rect(x0 - 1, z0 - 1, x1 - x0 + 2, z1 - z0 + 2); off.rect(ex0, ez0, ex1 - ex0, ez1 - ez0);
+    ctx.fillStyle = MAP_OFF; ctx.fill(off, 'evenodd');
+    ctx.strokeStyle = '#bdbab2'; ctx.lineWidth = mpp; ctx.strokeRect(ex0, ez0, ex1 - ex0, ez1 - ez0);
+  }
+}
+// Place the labels on a view of W x H CSS pixels whose top-left is world (x0, z0). The boxes in
+// keepClear ([left, top, right, bottom]) stay free; a label that lands on the boat (at boat, if
+// given) moves to just below or above it.
+function drawMapLabels(ctx, W, H, x0, z0, mpp, keepClear, boat) {
+  ctx.setTransform(MAP_DPR, 0, 0, MAP_DPR, 0, 0);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+  const hh = 8, placed = keepClear.slice();
+  const free = (x, y, hw) => !placed.some(b => x - hw < b[2] && x + hw > b[0] && y - hh < b[3] && y + hh > b[1]);
+  for (const l of MAP.labels) {
+    let x = (l.x - x0) / mpp, y = (l.z - z0) / mpp;
+    if (x < 0 || x > W || y < 0 || y > H) continue;
+    const hw = l.hw + 3;
+    x = Math.min(Math.max(x, hw), W - hw); y = Math.min(Math.max(y, hh), H - hh);
+    if (!free(x, y, hw)) {
+      const onBoat = boat && Math.abs(x - boat[0]) < hw + 12 && Math.abs(y - boat[1]) < hh + 12;
+      y = onBoat ? [boat[1] + 12 + hh, boat[1] - 12 - hh].find(yy => free(x, yy, hw)) : undefined;
+      if (y === undefined) continue;
+    }
+    placed.push([x - hw, y - hh, x + hw, y + hh]);
+    const [font, colour] = MAP_LABELS[l.kind];
+    ctx.font = font; ctx.fillStyle = colour;
+    ctx.strokeText(l.name, x, y); ctx.fillText(l.name, x, y);
+  }
+}
+// A scale bar in the bottom-left corner: the longest round distance that fits in about 70 px.
+const SCALE_BOX = (H) => [0, H - 22, 110, H]; // kept clear of labels
+function drawScaleBar(ctx, H, mpp) {
+  const steps = [50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000];
+  const d = steps.filter(m => m / mpp <= 70).pop() || steps[0];
+  const x = 8, y = H - 8, len = d / mpp;
+  ctx.setTransform(MAP_DPR, 0, 0, MAP_DPR, 0, 0);
+  const bar = () => { ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x, y); ctx.lineTo(x + len, y); ctx.lineTo(x + len, y - 4); ctx.stroke(); };
+  ctx.lineCap = ctx.lineJoin = 'square';
+  ctx.strokeStyle = 'rgba(255,255,255,0.92)'; ctx.lineWidth = 3; bar();
+  ctx.strokeStyle = '#4c4c4c'; ctx.lineWidth = 1; bar();
+  ctx.font = '500 9.5px "Public Sans"'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  const text = d >= 1000 ? `${d / 1000} km` : `${d} m`;
+  ctx.strokeStyle = 'rgba(255,255,255,0.92)'; ctx.lineWidth = 3; ctx.strokeText(text, x + len + 5, y + 1);
+  ctx.fillStyle = '#4c4c4c'; ctx.fillText(text, x + len + 5, y + 1);
 }
 // Size the view canvas to its CSS box (it has none while the panel is hidden).
 new ResizeObserver(() => {
