@@ -109,17 +109,35 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
    Lite (white land, grey water and roads) with a small compass in its corner, then the readings,
    the point of sail and the sailing keys. */
 .inst { right: max(14px, env(safe-area-inset-right)); bottom: 14px; width: 300px; padding: 0.55rem 0.6rem 0.5rem; }
-.chart { position: relative; height: 184px; overflow: hidden; border: 1px solid var(--rule); background: #dcdcdc; }
+.chart { position: relative; height: 184px; overflow: hidden; border: 1px solid var(--rule); background: #dcdcdc; cursor: pointer; }
 .chart canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .chart .boat { position: absolute; left: 50%; top: 50%; overflow: visible; }
 .chart .rose { position: absolute; right: 5px; top: 5px; width: 34px; height: 34px; color: var(--ink3); }
-.inst .rose-n { fill: var(--ink); font-family: var(--display); }
-.inst .needle-n { fill: var(--ink); }
-.inst .needle-s { fill: var(--ink3); }
+.rose-n { fill: var(--ink); font-family: var(--display); }
+.needle-n { fill: var(--ink); }
+.needle-s { fill: var(--ink3); }
 .inst .wind { fill: var(--accent); }
 .inst .wind-arrow { width: 0.75rem; height: 0.75rem; margin-left: 0.15rem; vertical-align: -0.1rem; }
-.inst .hull { fill: var(--ink); stroke: #fff; stroke-width: 2.6; paint-order: stroke; }
-.inst .course { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; }
+.hull { fill: var(--ink); stroke: #fff; stroke-width: 2.6; paint-order: stroke; }
+.course { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; }
+/* Chart (M): the whole area in a large panel over the scene, same style as the minimap. */
+/* Between the masthead and the controls along the bottom, centred. */
+.bigmap {
+  top: 14px; bottom: 128px; left: 0; right: 0; margin: 0 auto; width: min(1180px, calc(100% - 28px));
+  display: flex; flex-direction: column; padding: 0.45rem 0.6rem 0.6rem; z-index: 3;
+}
+.bigmap .head { display: flex; align-items: baseline; gap: 1rem; padding-bottom: 0.4rem; }
+.bigmap h2 { font-family: var(--display); font-weight: 400; font-size: 1.05rem; white-space: nowrap; }
+.bigmap .hint { flex: 1; font-size: 0.72rem; color: var(--ink2); }
+.bigmap .close { background: none; border: 1px solid var(--rule); border-radius: 2px; padding: 0 0.5rem; font-size: 0.72rem; color: var(--ink2); cursor: pointer; }
+.bigmap .close:hover { color: var(--ink); }
+.bigmap kbd { font-family: var(--mono); font-size: 0.68rem; color: var(--ink); }
+.bigmap .view { position: relative; flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--rule); background: #dcdcdc; cursor: grab; touch-action: none; }
+.bigmap .view.water { cursor: crosshair; }
+.bigmap .view.dragging { cursor: grabbing; }
+.bigmap canvas, .bigmap .marks { position: absolute; inset: 0; width: 100%; height: 100%; }
+.bigmap .marks { pointer-events: none; }
+.bigmap .rose { position: absolute; right: 8px; top: 8px; width: 44px; height: 44px; color: var(--ink3); pointer-events: none; }
 .inst dl { display: grid; grid-template-columns: repeat(4, auto); justify-content: space-between; gap: 0.25rem 0.6rem; margin-top: 0.45rem; }
 .inst dt { font-size: 0.66rem; line-height: 1.2; color: var(--ink2); }
 .inst dd { font-family: var(--mono); font-size: 0.78rem; line-height: 1.3; white-space: nowrap; }
@@ -156,6 +174,8 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
   .credits { display: none; }
   .inst { bottom: auto; top: 14px; width: 200px; padding: 0.45rem 0.5rem 0.4rem; }
   .chart { height: 120px; }
+  .bigmap .hint { display: none; }
+  .bigmap { bottom: 14px; }
   .inst dl { grid-template-columns: auto auto; }
   .inst dd { font-size: 0.72rem; }
 }
@@ -180,7 +200,7 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
   <div id="labels"></div>
 
   <section class="panel sky" aria-label="Controls">
-    <div class="keys" id="keys" hidden><span><kbd>A</kbd> <kbd>D</kbd> steer</span><span><kbd>E</kbd> motor</span><span><kbd>B</kbd> hold to boost</span><span>Drag to orbit</span><span>Scroll to zoom</span></div>
+    <div class="keys" id="keys" hidden><span><kbd>A</kbd> <kbd>D</kbd> steer</span><span><kbd>E</kbd> motor</span><span><kbd>B</kbd> hold to boost</span><span><kbd>M</kbd> chart</span><span>Drag to orbit</span><span>Scroll to zoom</span></div>
     <div class="controls">
     <div class="field time">
       <label for="tod">Time of day</label>
@@ -247,6 +267,30 @@ input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50
       <div><dt>Depth</dt><dd id="r-dep">&ndash; m</dd></div>
     </dl>
     <div class="foot"><p class="pos" id="r-pos">Beam reach</p><span class="osm">&copy; OpenStreetMap</span></div>
+  </section>
+
+  <section class="panel bigmap" id="bigmap" hidden aria-label="Chart">
+    <div class="head">
+      <h2 id="bigmap-title">Chart</h2>
+      <p class="hint">Scroll to zoom, drag to move, click open water to sail there.</p>
+      <button type="button" class="close" id="bigmap-close">Close <kbd>M</kbd></button>
+    </div>
+    <div class="view" id="bigmap-view">
+      <canvas id="bigmap-canvas" aria-hidden="true"></canvas>
+      <svg class="marks" aria-hidden="true">
+        <g id="bigmapBoat">
+          <line class="course" y1="-12" y2="-60"/>
+          <path class="hull" d="M0 -13 C4.5 -6 4.6 5 3.3 11 L-3.3 11 C-4.6 5 -4.5 -6 0 -13 Z"/>
+        </g>
+      </svg>
+      <svg class="rose" viewBox="-17 -17 34 34" aria-hidden="true">
+        <circle r="16" fill="rgba(255,255,255,0.88)" stroke="currentColor" stroke-width="0.8"/>
+        <path d="M16 0 H13 M0 16 V13 M-16 0 H-13" stroke="currentColor" stroke-width="0.8"/>
+        <text class="rose-n" y="-10.5" text-anchor="middle" dominant-baseline="central" font-size="6.5">N</text>
+        <path class="needle-n" d="M0 -6.5 L2.6 1 L-2.6 1 Z"/>
+        <path class="needle-s" d="M0 8.5 L2.6 1 L-2.6 1 Z"/>
+      </svg>
+    </div>
   </section>
 
   <div class="rudder" id="rudder" hidden>
@@ -1021,6 +1065,8 @@ addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
   keys[e.key.toLowerCase()] = true;
   if (e.key.toLowerCase() === 'e' && state.mode === 'sail') toggleMotor();
+  if (e.key.toLowerCase() === 'm' && !e.repeat) toggleBigMap();
+  if (e.key === 'Escape' && BIGMAP.open) toggleBigMap(false);
 });
 addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 const look = { yaw: 0, pitch: 0, dragging: false, lx: 0, ly: 0, dist: 30 };
@@ -1362,38 +1408,139 @@ new ResizeObserver(() => {
   if (w > 0 && h > 0 && (w !== v.width || h !== v.height)) { v.width = w; v.height = h; MAP.last = ''; }
 }).observe(MAP.view);
 function updateMap() {
-  const { base, view, ctx } = MAP, w = view.width, h = view.height;
-  if (!base || w < 2 || h < 2) return;
-  const sx = Math.round((sail.x - MAP.minX) * MAP.s - w / 2), sy = Math.round((sail.z - MAP.minZ) * MAP.s - h / 2);
-  const key = sx + ',' + sy;
+  const { layers, view, ctx } = MAP, w = view.width, h = view.height;
+  if (!layers || w < 2 || h < 2) return;
+  const mpp = MAP.mpp, s = MAP_DPR / mpp, pw = 3 * w, ph = 3 * h;
+  let P = MAP.patch, bx = 0, by = 0;
+  if (P) { bx = (sail.x - P.x0) * s; by = (sail.z - P.z0) * s; }
+  // Redraw the patch around the boat when the view would run off it, or the zoom or size changed.
+  if (!P || P.mpp !== mpp || P.canvas.width !== pw || P.canvas.height !== ph || Math.abs(bx - pw / 2) > w || Math.abs(by - ph / 2) > h) {
+    P = MAP.patch ||= { canvas: document.createElement('canvas'), gen: 0 };
+    if (P.canvas.width !== pw || P.canvas.height !== ph) { P.canvas.width = pw; P.canvas.height = ph; }
+    // The patch corner on a whole device pixel, so the copied view doesn't shimmer.
+    P.x0 = Math.floor(sail.x * s - pw / 2) / s; P.z0 = Math.floor(sail.z * s - ph / 2) / s;
+    P.mpp = mpp; P.gen++;
+    drawMapArea(P.canvas.getContext('2d'), pw, ph, P.x0, P.z0, mpp);
+    bx = (sail.x - P.x0) * s; by = (sail.z - P.z0) * s;
+  }
+  const sx = Math.round(bx - w / 2), sy = Math.round(by - h / 2);
+  const key = `${sx},${sy},${P.gen}`;
   if (key === MAP.last) return;
   MAP.last = key;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = MAP_WATER; ctx.fillRect(0, 0, w, h);
-  const x0 = Math.max(0, sx), y0 = Math.max(0, sy), x1 = Math.min(base.width, sx + w), y1 = Math.min(base.height, sy + h);
-  if (x1 > x0 && y1 > y0) ctx.drawImage(base, x0, y0, x1 - x0, y1 - y0, x0 - sx, y0 - sy, x1 - x0, y1 - y0);
-  // Labels in CSS pixels. The compass corner and the boat are kept clear: a label on the boat
-  // moves to just below or above it.
-  ctx.setTransform(MAP_DPR, 0, 0, MAP_DPR, 0, 0);
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.92)';
-  const W = w / MAP_DPR, H = h / MAP_DPR, ox = sx / MAP_DPR, oy = sy / MAP_DPR, hh = 8;
-  const placed = [[W - 44, 0, W, 44], [W / 2 - 12, H / 2 - 12, W / 2 + 12, H / 2 + 12]];
-  const free = (x, y, hw) => !placed.some(b => x - hw < b[2] && x + hw > b[0] && y - hh < b[3] && y + hh > b[1]);
-  for (const l of MAP.labels) {
-    let x = (l.x - MAP.minX) / MAP_MPP - ox, y = (l.z - MAP.minZ) / MAP_MPP - oy;
-    if (x < 0 || x > W || y < 0 || y > H) continue;
-    const hw = l.hw + 3;
-    x = Math.min(Math.max(x, hw), W - hw); y = Math.min(Math.max(y, hh), H - hh);
-    if (!free(x, y, hw)) {
-      const onBoat = Math.abs(x - W / 2) < hw + 12 && Math.abs(y - H / 2) < hh + 12;
-      y = onBoat ? [H / 2 + 12 + hh, H / 2 - 12 - hh].find(yy => free(x, yy, hw)) : undefined;
-      if (y === undefined) continue;
-    }
-    placed.push([x - hw, y - hh, x + hw, y + hh]);
-    const [font, colour] = MAP_LABELS[l.kind];
-    ctx.font = font; ctx.fillStyle = colour;
-    ctx.strokeText(l.name, x, y); ctx.fillText(l.name, x, y);
+  ctx.drawImage(P.canvas, sx, sy, w, h, 0, 0, w, h);
+  // Labels keep the compass corner, the scale bar and the boat clear.
+  const W = w / MAP_DPR, H = h / MAP_DPR;
+  drawMapLabels(ctx, W, H, P.x0 + sx / s, P.z0 + sy / s, mpp,
+    [[W - 44, 0, W, 44], SCALE_BOX(H), [W / 2 - 12, H / 2 - 12, W / 2 + 12, H / 2 + 12]], [W / 2, H / 2]);
+  drawScaleBar(ctx, H, mpp);
+}
+// Wheel steps in pixels (Firefox reports lines for a mouse wheel), as a zoom factor: 1.2 per notch.
+const wheelZoom = e => Math.exp(e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1) * 0.0018);
+$('#minimap').addEventListener('wheel', e => {
+  e.preventDefault();
+  MAP.mpp = Math.min(MAP_ZOOM[1], Math.max(MAP_ZOOM[0], MAP.mpp * wheelZoom(e)));
+  updateMap();
+}, { passive: false });
+$('#minimap').addEventListener('click', () => toggleBigMap(true));
+
+/* The chart. Its view is a centre (cx, cz) in world metres and a scale; it opens showing the
+   whole area. The paths are redrawn only when the view changes; the boat mark is SVG on top. */
+const BIGMAP = { el: $('#bigmap'), view: $('#bigmap-view'), canvas: $('#bigmap-canvas'), open: false,
+  cx: 0, cz: 0, mpp: 45, dirty: true, drag: null };
+BIGMAP.ctx = BIGMAP.canvas.getContext('2d');
+function sizeBigMap() {
+  const c = BIGMAP.canvas, w = Math.round(c.clientWidth * MAP_DPR), h = Math.round(c.clientHeight * MAP_DPR);
+  if (w > 0 && h > 0 && (w !== c.width || h !== c.height)) { c.width = w; c.height = h; BIGMAP.dirty = true; }
+}
+new ResizeObserver(sizeBigMap).observe(BIGMAP.canvas);
+// The scale that fits the whole area, and the limits of zooming and moving.
+function bigMapFit() {
+  const [x0, z0, x1, z1] = MAP.extent, W = BIGMAP.canvas.clientWidth || 1, H = BIGMAP.canvas.clientHeight || 1;
+  return Math.max((x1 - x0) / W, (z1 - z0) / H) * 1.03;
+}
+function bigMapClamp() {
+  const [x0, z0, x1, z1] = MAP.extent;
+  BIGMAP.mpp = Math.min(bigMapFit() * 1.5, Math.max(6, BIGMAP.mpp));
+  BIGMAP.cx = Math.min(x1, Math.max(x0, BIGMAP.cx)); BIGMAP.cz = Math.min(z1, Math.max(z0, BIGMAP.cz));
+  BIGMAP.dirty = true;
+}
+function toggleBigMap(open = !BIGMAP.open) {
+  if (open && !MAP.extent) return; // the map data hasn't loaded
+  BIGMAP.open = open;
+  BIGMAP.el.hidden = !open;
+  if (!open) return;
+  sizeBigMap(); // now, rather than a frame later from the ResizeObserver
+  const [x0, z0, x1, z1] = MAP.extent;
+  BIGMAP.cx = (x0 + x1) / 2; BIGMAP.cz = (z0 + z1) / 2; BIGMAP.mpp = bigMapFit();
+  BIGMAP.dirty = true;
+}
+// World position under a pointer event.
+function bigMapWorld(e) {
+  const r = BIGMAP.canvas.getBoundingClientRect();
+  return [BIGMAP.cx + (e.clientX - r.left - r.width / 2) * BIGMAP.mpp, BIGMAP.cz + (e.clientY - r.top - r.height / 2) * BIGMAP.mpp];
+}
+// Open water the boat may sail to: inside the sailing area and at least 3 m deep around the spot.
+function canSailTo(x, z) {
+  if (x < MINX + 2500 || x > MAXX - 2500 || z < MINZ + 2500 || z > MAXZ - 1500) return false;
+  return [[0, 0], [15, 0], [-15, 0], [0, 15], [0, -15]].every(([dx, dz]) => sampleH(x + dx, z + dz) < -3);
+}
+// Fast travel: the boat starts from rest at the new spot, the chase camera snaps behind it, and
+// both tree rings are rebuilt there at once (one long frame) rather than filling in over a second.
+function sailTo(x, z) {
+  sail.x = x; sail.z = z; sail.kn = 0;
+  for (const ring of FOREST) { ring.cx = ring.cz = Infinity; ring.job = null; }
+  if (state.mode !== 'sail') setMode('sail'); else camInit = false;
+  toggleBigMap(false);
+}
+BIGMAP.view.addEventListener('wheel', e => {
+  e.preventDefault();
+  // Zoom about the cursor: the point under it stays put.
+  const [wx, wz] = bigMapWorld(e), f = wheelZoom(e);
+  const before = BIGMAP.mpp;
+  BIGMAP.mpp *= f; bigMapClamp();
+  const k = BIGMAP.mpp / before;
+  BIGMAP.cx = wx + (BIGMAP.cx - wx) * k; BIGMAP.cz = wz + (BIGMAP.cz - wz) * k;
+  bigMapClamp();
+}, { passive: false });
+BIGMAP.view.addEventListener('pointerdown', e => {
+  BIGMAP.drag = { x: e.clientX, y: e.clientY, moved: 0 };
+  BIGMAP.view.setPointerCapture(e.pointerId);
+});
+BIGMAP.view.addEventListener('pointermove', e => {
+  const d = BIGMAP.drag;
+  if (!d) { const [x, z] = bigMapWorld(e); BIGMAP.view.classList.toggle('water', canSailTo(x, z)); return; }
+  const dx = e.clientX - d.x, dy = e.clientY - d.y;
+  d.moved += Math.abs(dx) + Math.abs(dy); d.x = e.clientX; d.y = e.clientY;
+  if (d.moved < 4) return; // still a click
+  BIGMAP.view.classList.add('dragging');
+  BIGMAP.cx -= dx * BIGMAP.mpp; BIGMAP.cz -= dy * BIGMAP.mpp;
+  bigMapClamp();
+});
+BIGMAP.view.addEventListener('pointerup', e => {
+  const d = BIGMAP.drag;
+  BIGMAP.drag = null; BIGMAP.view.classList.remove('dragging');
+  if (!d || d.moved >= 4) return;
+  const [x, z] = bigMapWorld(e);
+  if (canSailTo(x, z)) sailTo(x, z);
+});
+BIGMAP.view.addEventListener('pointercancel', () => { BIGMAP.drag = null; BIGMAP.view.classList.remove('dragging'); });
+$('#bigmap-close').addEventListener('click', () => toggleBigMap(false));
+function updateBigMap() {
+  if (!BIGMAP.open || !MAP.layers) return;
+  const { canvas, ctx } = BIGMAP, w = canvas.width, h = canvas.height, W = w / MAP_DPR, H = h / MAP_DPR;
+  if (w < 2 || h < 2) return;
+  const x0 = BIGMAP.cx - W / 2 * BIGMAP.mpp, z0 = BIGMAP.cz - H / 2 * BIGMAP.mpp;
+  const bx = (sail.x - x0) / BIGMAP.mpp, by = (sail.z - z0) / BIGMAP.mpp;
+  // Redraw when the view changed, or the boat has moved far enough to need labels moved off it.
+  const lb = BIGMAP.labelBoat;
+  if (BIGMAP.dirty || !lb || Math.hypot(bx - lb[0], by - lb[1]) > 6) {
+    BIGMAP.dirty = false; BIGMAP.labelBoat = [bx, by];
+    drawMapArea(ctx, w, h, x0, z0, BIGMAP.mpp);
+    drawMapLabels(ctx, W, H, x0, z0, BIGMAP.mpp, [[W - 58, 0, W, 58], SCALE_BOX(H), [bx - 12, by - 12, bx + 12, by + 12]], [bx, by]);
+    drawScaleBar(ctx, H, BIGMAP.mpp);
   }
+  setAttr('#bigmapBoat', 'transform', `translate(${bx.toFixed(1)} ${by.toFixed(1)}) rotate(${Math.round(sail.hdg) % 360})`);
 }
 
 /* ---------- build world ---------- */
@@ -1880,6 +2027,7 @@ function frame(now) {
   renderReflection();
   renderMain();
   updateLabels();
+  updateBigMap();
   requestAnimationFrame(frame);
 }
 
@@ -1889,6 +2037,7 @@ setMode('fly');
 // ?debug exposes camera controls for scripted screenshots.
 if (params.has('debug')) window.pilot = {
   look, sail, state, setMode, U, forest: FOREST, renderer, scene, camera, renderMain, renderReflection,
+  map: MAP, bigmap: BIGMAP, canSailTo, drawMapArea,
   setFly: u => { flyU = u; camInit = false; },
   // Average milliseconds per frame (reflection + main pass), waiting for the GPU each frame.
   bench(frames = 60) {

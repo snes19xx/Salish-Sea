@@ -11,6 +11,8 @@ node breakdown.mjs 0.02                # GPU cost of each part at a point on the
 node flytour.mjs                       # GPU time + screenshots along the route, live pacing
 node sailbench.mjs 10                  # Sail mode after 10 s of boost: GPU with and without the wake
 node treelag.mjs 25                    # do the tree rings keep up during 25 s of boost?
+node maptest.mjs                       # minimap zoom, chart (M), zoom/drag, click to sail there
+node shot.mjs name "" "P.setFly(0.2); 9000"   # screenshots after running JS (P = window.pilot)
 ```
 
 Pass a query string to test a variant, e.g. `node breakdown.mjs 0.02 stride=2` (for `sailbench`
