@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Howe Sound, Sunshine Coast</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Spline+Sans+Mono:wght@400;500&display=swap">
+</head>
+<body>
+
+<header class="mast">
+  <div class="id">
+    <h1 id="b-title">Howe Sound</h1>
+    <p class="sub" id="b-sub">Horseshoe Bay to Gibsons on real elevation and seafloor data</p>
+  </div>
+  <nav class="modes" aria-label="View">
+    <button id="mode-fly" type="button" aria-pressed="true">Flyover</button>
+    <button id="mode-sail" type="button" aria-pressed="false">Sail</button>
+  </nav>
+</header>
+
+<main class="stage" id="stage">
+  <canvas id="c" aria-label="3D view of Howe Sound"></canvas>
+  <div id="labels"></div>
+
+  <section class="panel sky" aria-label="Controls">
+    <div class="keys" id="keys" hidden><span><kbd>A</kbd> <kbd>D</kbd> steer</span><span><kbd>E</kbd> motor</span><span><kbd>B</kbd> hold to boost</span><span><kbd>M</kbd> chart</span><span>Drag to orbit</span><span>Scroll to zoom</span></div>
+    <div class="controls">
+    <div class="field time">
+      <label for="tod">Time of day</label>
+      <input id="tod" type="range" min="0" max="23.95" step="0.05" value="19.33">
+      <span class="clock" id="clock">19:20</span>
+    </div>
+    <div class="field">
+      <span class="name" id="wx-name">Weather</span>
+      <div class="seg" id="weather" role="group" aria-labelledby="wx-name">
+        <button type="button" id="wx-clear" aria-pressed="true">Clear</button>
+        <button type="button" id="wx-haze" aria-pressed="false">Haze</button>
+        <button type="button" id="wx-over" aria-pressed="false">Overcast</button>
+      </div>
+    </div>
+    <div class="field trees-field">
+      <span class="name" id="trees-name">Trees</span>
+      <div class="seg" id="trees" role="group" aria-labelledby="trees-name">
+        <button type="button" data-style="mixed" aria-pressed="false">Mixed</button>
+        <button type="button" data-style="fir" aria-pressed="false">Fir</button>
+        <button type="button" data-style="cedar" aria-pressed="false">Cedar</button>
+        <button type="button" data-style="hemlock" aria-pressed="false">Hemlock</button>
+        <button type="button" data-style="off" aria-pressed="false">Off</button>
+      </div>
+    </div>
+    <div class="field">
+      <span class="name" id="labels-name">Labels</span>
+      <div class="seg" id="label-toggle" role="group" aria-labelledby="labels-name">
+        <button type="button" data-labels="on" aria-pressed="true">On</button>
+        <button type="button" data-labels="off" aria-pressed="false">Off</button>
+      </div>
+    </div>
+    </div>
+    <div class="credits">
+      <p id="b-note"></p>
+      <p id="b-credit"></p>
+    </div>
+  </section>
+
+  <section class="panel inst" id="inst" hidden aria-label="Chart and instruments">
+    <div class="chart" id="minimap" title="Scroll to zoom; click for the chart (M)">
+      <canvas id="map" aria-hidden="true"></canvas>
+      <!-- The boat sits at the centre; its course line runs to the edge of the map. -->
+      <svg class="boat" width="1" height="1" aria-hidden="true">
+        <g id="boatMark">
+          <line class="course" y1="-12" y2="-400"/>
+          <path class="hull" transform="scale(0.8)" d="M0 -13 C4.5 -6 4.6 5 3.3 11 L-3.3 11 C-4.6 5 -4.5 -6 0 -13 Z"/>
+        </g>
+      </svg>
+      <!-- The map is north-up. -->
+      <svg class="rose" viewBox="-17 -17 34 34" aria-hidden="true">
+        <circle r="16" fill="rgba(255,255,255,0.88)" stroke="currentColor" stroke-width="0.8"/>
+        <path d="M16 0 H13 M0 16 V13 M-16 0 H-13" stroke="currentColor" stroke-width="0.8"/>
+        <text class="rose-n" y="-10.5" text-anchor="middle" dominant-baseline="central" font-size="6.5">N</text>
+        <path class="needle-n" d="M0 -6.5 L2.6 1 L-2.6 1 Z"/>
+        <path class="needle-s" d="M0 8.5 L2.6 1 L-2.6 1 Z"/>
+      </svg>
+    </div>
+    <dl>
+      <div><dt>Heading</dt><dd id="r-hdg">270&deg; W</dd></div>
+      <div><dt>Speed</dt><dd id="r-spd">0.0 kn</dd></div>
+      <div><dt>Wind</dt><dd><span id="r-wind">14 kn WNW</span>
+        <!-- Points the way the wind blows. -->
+        <svg class="wind-arrow" viewBox="-6 -6 12 12" aria-hidden="true"><path id="windArrow" class="wind" d="M0 5.5 L3.6 0 L1.1 0.9 L1.1 -5.5 L-1.1 -5.5 L-1.1 0.9 L-3.6 0 Z"/></svg></dd></div>
+      <div><dt>Depth</dt><dd id="r-dep">&ndash; m</dd></div>
+    </dl>
+    <div class="foot"><p class="pos" id="r-pos">Beam reach</p><span class="osm">&copy; OpenStreetMap</span></div>
+  </section>
+
+  <section class="panel bigmap" id="bigmap" hidden aria-label="Chart">
+    <div class="head">
+      <h2 id="bigmap-title">Chart</h2>
+      <p class="hint">Scroll to zoom, drag to move, click open water to sail there.</p>
+      <button type="button" class="close" id="bigmap-close">Close <kbd>M</kbd></button>
+    </div>
+    <div class="view" id="bigmap-view">
+      <canvas id="bigmap-canvas" aria-hidden="true"></canvas>
+      <svg class="marks" aria-hidden="true">
+        <g id="bigmapBoat">
+          <line class="course" y1="-12" y2="-60"/>
+          <path class="hull" d="M0 -13 C4.5 -6 4.6 5 3.3 11 L-3.3 11 C-4.6 5 -4.5 -6 0 -13 Z"/>
+        </g>
+      </svg>
+      <svg class="rose" viewBox="-17 -17 34 34" aria-hidden="true">
+        <circle r="16" fill="rgba(255,255,255,0.88)" stroke="currentColor" stroke-width="0.8"/>
+        <path d="M16 0 H13 M0 16 V13 M-16 0 H-13" stroke="currentColor" stroke-width="0.8"/>
+        <text class="rose-n" y="-10.5" text-anchor="middle" dominant-baseline="central" font-size="6.5">N</text>
+        <path class="needle-n" d="M0 -6.5 L2.6 1 L-2.6 1 Z"/>
+        <path class="needle-s" d="M0 8.5 L2.6 1 L-2.6 1 Z"/>
+      </svg>
+    </div>
+  </section>
+
+  <div class="rudder" id="rudder" hidden>
+    <button type="button" id="rud-l" aria-label="Steer to port">&#8630;</button>
+    <div class="mid"><button type="button" id="rud-m">Motor off</button><button type="button" id="rud-b">Boost</button></div>
+    <button type="button" id="rud-r" aria-label="Steer to starboard">&#8631;</button>
+  </div>
+
+  <div id="loader"><div><h2>Howe Sound</h2><p id="load-msg">Loading the coastline&hellip;</p></div></div>
+</main>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

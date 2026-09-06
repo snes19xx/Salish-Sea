@@ -1,0 +1,24 @@
+{
+  "name": "howe-sound",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Sunshine Coast 3D: sail Howe Sound on real elevation and seafloor data.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "lil-gui": "^0.21.0",
+    "stats-gl": "^4.2.3",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/three": "^0.187.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6"
+  }
+}
