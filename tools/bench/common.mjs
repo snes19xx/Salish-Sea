@@ -3,7 +3,11 @@
 // timings miss real compositor and vsync behaviour, so measurements use a visible window.
 import puppeteer from 'puppeteer-core';
 
-export const BASE = process.env.BASE || 'http://127.0.0.1:8765';
+// APP=web measures the Vite app in web/ (npm run dev, port 5173); the default is the single-file
+// pilot served from the project root on port 8765. Both expose the same window.pilot hook.
+export const APP = process.env.APP || 'pilot';
+export const BASE = process.env.BASE || (APP === 'web' ? 'http://127.0.0.1:5173' : 'http://127.0.0.1:8765');
+const PAGE = APP === 'web' ? '/' : '/pilot/';
 export const OUT = process.env.OUT || new URL('./out/', import.meta.url).pathname;
 
 export async function openPilot(query = '') {
@@ -13,7 +17,8 @@ export async function openPilot(query = '') {
   });
   const page = await browser.newPage();
   page.on('pageerror', e => console.log('[pageerror]', e.message));
-  await page.goto(`${BASE}/pilot/?debug${query ? '&' + query : ''}`, { waitUntil: 'load' });
+  page.on('console', m => { if (m.type() === 'error' || m.type() === 'warn') console.log(`[${m.type()}]`, m.text()); });
+  await page.goto(`${BASE}${PAGE}?debug${query ? '&' + query : ''}`, { waitUntil: 'load' });
   await page.waitForFunction(() => document.querySelector('#loader.done') && window.pilot, { timeout: 180000, polling: 500 });
   await new Promise(r => setTimeout(r, 6000)); // trees bake, forest rings fill
   return { browser, page };
