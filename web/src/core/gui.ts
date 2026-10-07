@@ -9,7 +9,7 @@ import { flyTuning } from '../flyover/path';
 import { setHour, setWeather } from '../ui/controls';
 import { forestTuning } from '../world/trees';
 import { GPU, PRESETS, applyQuality, quality, setQuality, type QualityName } from './quality';
-import { renderer } from './renderer';
+import { antiAlias, renderer } from './renderer';
 import { state } from './state';
 
 let panel: { gui: GUIType; stats: StatsType } | null = null;
@@ -43,7 +43,9 @@ export async function toggleGui() {
   q.add(quality, 'reflTrees').name('Trees in reflection').onChange(applyQuality);
   q.add(quality, 'farTrees').name('Far tree ring').onChange(applyQuality);
   q.add(quality, 'detail').name('Terrain detail').onChange(applyQuality);
-  q.add(quality, 'msaa').name('MSAA (on reload)').disable();
+  // MSAA only applies if the page loaded with it; otherwise SMAA stands in (see quality.ts).
+  q.add(quality, 'aa', ['none', 'smaa', 'msaa']).name('Antialiasing').listen();
+  q.add({ get inUse() { return antiAlias(); } }, 'inUse').name('Antialiasing in use').disable().listen();
 
   const s = gui.addFolder('Scene');
   // listen(): these also change outside the panel (the control strip, the area's data on load).

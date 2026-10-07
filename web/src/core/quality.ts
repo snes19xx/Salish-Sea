@@ -1,16 +1,21 @@
 // Quality presets. Every feature with a cost reads its settings
 // from `quality`; switching preset updates it and tells the listeners. High is the pilot's look.
 // The default comes from the GPU's name: Intel and other integrated or mobile GPUs get Balanced.
-// ?quality=low|balanced|high overrides it.
+// ?quality=low|balanced|high overrides it, ?aa= the antialiasing.
 import { params } from './util';
 
 export type QualityName = 'low' | 'balanced' | 'high';
+/**
+ * Antialiasing. 'msaa' multisamples the canvas, which can only be set when the page loads: it
+ * applies if the page loaded with it, and otherwise falls back to 'smaa'. 'smaa' draws the scene
+ * off screen and smooths the edges in a post pass (cheaper on integrated GPUs).
+ */
+export type AntiAlias = 'none' | 'smaa' | 'msaa';
 
 export interface QualitySettings {
   /** Canvas pixels per CSS pixel. Rendering at full retina resolution costs far more than it shows. */
   renderScale: number;
-  /** Multisampled main framebuffer. Read once, when the renderer is made (an SMAA pass replaces it later). */
-  msaa: boolean;
+  aa: AntiAlias;
   /** Reflection target size as a share of the canvas. */
   reflScale: number;
   /** Draw the trees into the water reflection. */
@@ -22,9 +27,9 @@ export interface QualitySettings {
 }
 
 export const PRESETS: Record<QualityName, QualitySettings> = {
-  low: { renderScale: 0.67, msaa: false, reflScale: 0.25, reflTrees: false, farTrees: false, detail: false },
-  balanced: { renderScale: 0.85, msaa: true, reflScale: 0.35, reflTrees: false, farTrees: true, detail: true },
-  high: { renderScale: 1.0, msaa: true, reflScale: 0.5, reflTrees: true, farTrees: true, detail: true }
+  low: { renderScale: 0.67, aa: 'none', reflScale: 0.25, reflTrees: false, farTrees: false, detail: false },
+  balanced: { renderScale: 0.85, aa: 'smaa', reflScale: 0.35, reflTrees: false, farTrees: true, detail: true },
+  high: { renderScale: 1.0, aa: 'msaa', reflScale: 0.5, reflTrees: true, farTrees: true, detail: true }
 };
 
 /** The GPU's name, from a throwaway WebGL 2 context. */
@@ -46,11 +51,14 @@ function defaultPreset(gpu: string): QualityName {
 export const GPU = gpuName();
 export const quality: QualitySettings & { name: QualityName } = { name: 'high', ...PRESETS.high };
 setQuality(defaultPreset(GPU), false);
+// ?aa=none|smaa|msaa overrides the preset's antialiasing at load (to compare them on one preset).
+const askedAA = params.get('aa');
+if (askedAA === 'none' || askedAA === 'smaa' || askedAA === 'msaa') quality.aa = askedAA;
 
 const listeners: (() => void)[] = [];
 export const onQualityChange = (fn: () => void) => { listeners.push(fn); };
 
-/** Switch preset. Everything but msaa applies at once. */
+/** Switch preset; applies at once (MSAA only if the page loaded with it, see AntiAlias). */
 export function setQuality(name: QualityName, notify = true) {
   Object.assign(quality, PRESETS[name], { name });
   if (notify) applyQuality();

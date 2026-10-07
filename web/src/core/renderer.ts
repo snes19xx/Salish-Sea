@@ -1,7 +1,8 @@
 // Renderer, scene, cameras and lights, the uniforms shared by every shader, and the two-range
 // depth split that draws each view.
 import * as THREE from 'three';
-import { quality } from './quality';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { quality, type AntiAlias } from './quality';
 import { $, params } from './util';
 
 export const stage = $('#stage'); // the scene fills everything under the masthead
@@ -10,7 +11,8 @@ export const canvas = $<HTMLCanvasElement>('#c');
 // No logarithmic depth: it writes depth from every fragment shader, which turns off the GPU's
 // early rejection of hidden pixels and doubled the frame time. Each view is instead drawn in two
 // depth ranges (far, then near); see renderSplit().
-export const renderer = new THREE.WebGLRenderer({ canvas, antialias: quality.msaa, powerPreference: 'high-performance' });
+export const renderer = new THREE.WebGLRenderer({ canvas, antialias: quality.aa === 'msaa', powerPreference: 'high-performance' });
+const canvasMsaa = !!renderer.getContext().getContextAttributes()?.antialias;
 renderer.autoClear = false;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -82,7 +84,43 @@ export function renderSplit(cam: THREE.Camera, target: THREE.WebGLRenderTarget |
   if (back) back.visible = backVis;
   renderer.setRenderTarget(null);
 }
-export function renderMain() { renderSplit(camera, null); }
+/** The antialiasing in effect: MSAA falls back to SMAA if the canvas wasn't made multisampled. */
+export function antiAlias(): AntiAlias {
+  return quality.aa === 'msaa' && !canvasMsaa ? 'smaa' : quality.aa;
+}
+
+// SMAA: the scene is drawn into an off-screen target, then the SMAA pass finds the edges and
+// writes the smoothed image to the canvas. Flagging the target the way three.js flags WebXR's
+// makes it draw exactly as onto the canvas: tone-mapped and sRGB-encoded into plain 8-bit
+// (an ordinary target would get linear, un-tone-mapped colour), so no shader changes, and SMAA
+// sees the display colours it is tuned for. Both are made on first use and sized with the canvas.
+let smaa: { target: THREE.WebGLRenderTarget; pass: SMAAPass } | null = null;
+function smaaTarget() {
+  if (!smaa) {
+    const target = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true, stencilBuffer: false });
+    target.texture.colorSpace = THREE.SRGBColorSpace;
+    Object.assign(target, { isXRRenderTarget: true });
+    const pass = new SMAAPass();
+    pass.clear = true; // its edge pass skips flat pixels, and autoClear is off
+    pass.renderToScreen = true;
+    smaa = { target, pass };
+    sizeSmaa();
+  }
+  return smaa;
+}
+function sizeSmaa() {
+  if (!smaa) return;
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  smaa.target.setSize(size.x, size.y);
+  smaa.pass.setSize(size.x, size.y);
+}
+
+export function renderMain() {
+  if (antiAlias() !== 'smaa') { renderSplit(camera, null); return; }
+  const { target, pass } = smaaTarget();
+  renderSplit(camera, target);
+  pass.render(renderer, target, target, 0, false);
+}
 
 /** Called with the stage size in CSS pixels and the pixel ratio whenever either changes. */
 export const resizeHooks: ((w: number, h: number, pr: number) => void)[] = [];
@@ -90,6 +128,7 @@ export function resize() {
   const w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
   renderer.setPixelRatio(pixelRatio());
   renderer.setSize(w, h);
+  sizeSmaa();
   camera.aspect = mirrorCam.aspect = camNear.aspect = camFar.aspect = w / h;
   for (const c of [camera, mirrorCam, camNear, camFar]) c.updateProjectionMatrix();
   for (const fn of resizeHooks) fn(w, h, renderer.getPixelRatio());

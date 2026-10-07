@@ -7,13 +7,13 @@ import { FOREST, setTreeStyle, setTreesShown } from '../world/trees';
 import { renderReflection } from '../world/water';
 import { look } from './input';
 import { quality, setQuality } from './quality';
-import { U, camera, renderMain, renderer, scene } from './renderer';
+import { U, antiAlias, camera, renderMain, renderer, scene } from './renderer';
 import { state, view } from './state';
 
 export function exposeDebugHook() {
   (window as unknown as { pilot: unknown }).pilot = {
     look, sail, state, setMode, U, forest: FOREST, renderer, scene, camera, renderMain, renderReflection,
-    map: MAP, bigmap: BIGMAP, canSailTo, drawMapArea, quality, setQuality,
+    map: MAP, bigmap: BIGMAP, canSailTo, drawMapArea, quality, setQuality, antiAlias,
     setFly: (u: number) => { view.flyU = u; view.camInit = false; },
     /** Average milliseconds per frame (reflection + main pass), waiting for the GPU each frame. */
     bench(frames = 60) {
