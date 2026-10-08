@@ -18,10 +18,21 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 
-/** Canvas pixels per CSS pixel: the preset's render scale, or ?pr= (capped at the screen's). */
+// The render scale in use: the preset's, lowered by dynamic resolution (core/dynres.ts) when
+// frames run long.
+let renderScale = quality.renderScale;
+export const currentRenderScale = () => renderScale;
+/** Change the render scale and (unless told not to) resize the drawing buffers to match. */
+export function setRenderScale(s: number, doResize = true) {
+  if (s === renderScale) return;
+  renderScale = s;
+  if (doResize) resize();
+}
+
+/** Canvas pixels per CSS pixel: the render scale, or ?pr= (capped at the screen's). */
 export function pixelRatio() {
   const pr = parseFloat(params.get('pr') || '');
-  return pr > 0 ? Math.min(window.devicePixelRatio || 1, pr) : quality.renderScale;
+  return pr > 0 ? Math.min(window.devicePixelRatio || 1, pr) : renderScale;
 }
 renderer.setPixelRatio(pixelRatio());
 renderer.setSize(stage.clientWidth, stage.clientHeight);

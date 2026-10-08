@@ -9,7 +9,8 @@ import { flyTuning } from '../flyover/path';
 import { setHour, setWeather } from '../ui/controls';
 import { forestTuning } from '../world/trees';
 import { GPU, PRESETS, applyQuality, quality, setQuality, type QualityName } from './quality';
-import { antiAlias, renderer } from './renderer';
+import { dynRes, resetDynRes } from './dynres';
+import { antiAlias, currentRenderScale, renderer } from './renderer';
 import { state } from './state';
 
 let panel: { gui: GUIType; stats: StatsType } | null = null;
@@ -30,6 +31,7 @@ export async function toggleGui() {
   const stats = new Stats({ trackGPU: true, logsPerSecond: 4, samplesLog: 40, samplesGraph: 10 });
   stats.dom.classList.add('stats-gl');
   document.body.appendChild(stats.dom);
+  dynRes.gpuTimerTaken = true; // stats-gl times the GPU itself from now on
   await stats.init(renderer);
 
   const gui = new GUI({ title: 'Debug' });
@@ -38,7 +40,16 @@ export async function toggleGui() {
   const q = gui.addFolder('Quality');
   q.add({ gpu: GPU || 'unknown' }, 'gpu').name('GPU').disable();
   q.add(quality, 'name', Object.keys(PRESETS)).name('Preset').onChange((n: QualityName) => { setQuality(n); refresh(); });
-  q.add(quality, 'renderScale', 0.4, 2, 0.05).name('Render scale').onFinishChange(applyQuality);
+  q.add(quality, 'renderScale', 0.4, 2, 0.05).name('Render scale (most)').onFinishChange(applyQuality);
+  q.add(quality, 'targetFps', 20, 144, 1).name('Target fps').listen();
+  q.add(dynRes, 'on').name('Dynamic resolution').onChange((on: boolean) => { if (!on) resetDynRes(); });
+  q.add(dynRes, 'min', 0.3, 1, 0.05).name('Lowest scale');
+  const live = {
+    get scale() { return currentRenderScale().toFixed(2); },
+    get ms() { return `${dynRes.ms.toFixed(1)} (${dynRes.timing})`; }
+  };
+  q.add(live, 'scale').name('Scale in use').disable().listen();
+  q.add(live, 'ms').name('Frame ms (measured by)').disable().listen();
   q.add(quality, 'reflScale', 0.15, 1, 0.05).name('Reflection scale').onFinishChange(applyQuality);
   q.add(quality, 'reflTrees').name('Trees in reflection').onChange(applyQuality);
   q.add(quality, 'farTrees').name('Far tree ring').onChange(applyQuality);

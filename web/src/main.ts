@@ -5,6 +5,7 @@ import { updateChase } from './boat/chase';
 import { sail, setWind, updateSail } from './boat/sailing';
 import { updateWake } from './boat/wake';
 import { exposeDebugHook } from './core/debug';
+import { beginFrameTiming, endFrameTiming, resetDynRes } from './core/dynres';
 import { toggleGui, updateGui } from './core/gui';
 import { GPU, onQualityChange, quality } from './core/quality';
 import { U, camera, renderMain, resize } from './core/renderer';
@@ -50,8 +51,10 @@ function frame(now: number) {
   dome.position.copy(camera.position);
   water.position.set(camera.position.x, 0, camera.position.z);
   updateWake(dt);
+  beginFrameTiming();
   renderReflection();
   renderMain();
+  endFrameTiming(now);
   updateLabels();
   updateBigMap();
   updateGui();
@@ -69,7 +72,7 @@ addEventListener('keydown', e => {
 });
 
 const applyDetail = () => { U.uDetail.value = quality.detail ? 1 : 0; };
-onQualityChange(() => { resize(); applyDetail(); applyForestQuality(); });
+onQualityChange(() => { resetDynRes(false); resize(); applyDetail(); applyForestQuality(); });
 applyDetail();
 wireControls();
 loadBoat();
@@ -86,6 +89,7 @@ loadData().then(() => {
       build();
       $('#loader').classList.add('done');
       last = performance.now();
+      resetDynRes(); // start its clock now, not during loading
       requestAnimationFrame(frame);
     } catch (err) {
       $('#load-msg').textContent = 'This browser could not start WebGL 2. Try a current Chrome, Safari or Firefox.';

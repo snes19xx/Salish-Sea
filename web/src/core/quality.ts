@@ -13,7 +13,12 @@ export type QualityName = 'low' | 'balanced' | 'high';
 export type AntiAlias = 'none' | 'smaa' | 'msaa';
 
 export interface QualitySettings {
-  /** Canvas pixels per CSS pixel. Rendering at full retina resolution costs far more than it shows. */
+  /** Frame rate to hold; dynamic resolution lowers the render scale when frames run longer. */
+  targetFps: number;
+  /**
+   * Canvas pixels per CSS pixel, the most dynamic resolution will use. Rendering at full retina
+   * resolution costs far more than it shows.
+   */
   renderScale: number;
   aa: AntiAlias;
   /** Reflection target size as a share of the canvas. */
@@ -27,9 +32,9 @@ export interface QualitySettings {
 }
 
 export const PRESETS: Record<QualityName, QualitySettings> = {
-  low: { renderScale: 0.67, aa: 'none', reflScale: 0.25, reflTrees: false, farTrees: false, detail: false },
-  balanced: { renderScale: 0.85, aa: 'smaa', reflScale: 0.35, reflTrees: false, farTrees: true, detail: true },
-  high: { renderScale: 1.0, aa: 'msaa', reflScale: 0.5, reflTrees: true, farTrees: true, detail: true }
+  low: { targetFps: 60, renderScale: 0.67, aa: 'none', reflScale: 0.25, reflTrees: false, farTrees: false, detail: false },
+  balanced: { targetFps: 60, renderScale: 0.85, aa: 'smaa', reflScale: 0.35, reflTrees: false, farTrees: true, detail: true },
+  high: { targetFps: 30, renderScale: 1.0, aa: 'msaa', reflScale: 0.5, reflTrees: true, farTrees: true, detail: true }
 };
 
 /** The GPU's name, from a throwaway WebGL 2 context. */
