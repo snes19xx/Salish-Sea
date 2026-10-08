@@ -33,6 +33,13 @@ the camera poses and the web run reuses them. On 1 Oct 2026 the port matched the
 difference under 0.1 of 255 per pixel, with under 0.12% of pixels differing by more than 8 (thin
 edges in the reflection, and the boat, whose bobbing follows the clock).
 
+To compare antialiasing, take the same shot with `?aa=msaa`, `smaa` and `none` and crop it:
+
+```bash
+for aa in msaa smaa none; do APP=web node shot.mjs aa-$aa "quality=high&aa=$aa" "P.setMode('sail'); P.sail.kn = 0; 5000"; done
+mamba run -n geo_env python tools/bench/aacrop.py tools/bench/out/aa-{msaa,smaa,none}-1.png   # out/aa-crops.png
+```
+
 `sailbench` also draws the frame with the wake's chunk skipping turned off (`allChunks`, the cost
 of walking all 96 track segments) and checks the two images match (`pixelsDiff` should be 0).
 `treelag` reports, per tree ring, the largest camera distance from the ring's centre as a share of
