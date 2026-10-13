@@ -10,9 +10,16 @@ export const BASE = process.env.BASE || (APP === 'web' ? 'http://127.0.0.1:5173'
 const PAGE = APP === 'web' ? '/' : '/pilot/';
 export const OUT = process.env.OUT || new URL('./out/', import.meta.url).pathname;
 
+// BROWSER=chrome uses Google Chrome instead of Firefox (it has GPU timer queries, Firefox doesn't).
+export const BROWSER = process.env.BROWSER || 'firefox';
+const EXE = {
+  firefox: '/Applications/Firefox.app/Contents/MacOS/firefox',
+  chrome: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+};
+
 export async function openPilot(query = '') {
   const browser = await puppeteer.launch({
-    browser: 'firefox', executablePath: '/Applications/Firefox.app/Contents/MacOS/firefox', headless: false,
+    browser: BROWSER, executablePath: EXE[BROWSER], headless: false,
     args: ['--width=1920', '--height=1080'], defaultViewport: { width: 1920, height: 1080, deviceScaleFactor: 1 }
   });
   const page = await browser.newPage();

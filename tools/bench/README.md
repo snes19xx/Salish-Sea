@@ -33,6 +33,15 @@ the camera poses and the web run reuses them. On 1 Oct 2026 the port matched the
 difference under 0.1 of 255 per pixel, with under 0.12% of pixels differing by more than 8 (thin
 edges in the reflection, and the boat, whose bobbing follows the clock).
 
+`BROWSER=chrome` runs any script in Google Chrome instead of Firefox; Chrome has GPU timer
+queries, so the web app's dynamic resolution uses them there. `dynres.mjs` fakes a slow machine
+by raising the frame-rate target, then restores it, and logs the render scale and frame time:
+
+```bash
+APP=web node dynres.mjs 144                  # Firefox: timing from frame intervals
+APP=web BROWSER=chrome node dynres.mjs 300   # Chrome: GPU timing (5 ms a frame on the Mac)
+```
+
 To compare antialiasing, take the same shot with `?aa=msaa`, `smaa` and `none` and crop it:
 
 ```bash
