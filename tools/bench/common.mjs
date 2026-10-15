@@ -1,6 +1,7 @@
-// Shared setup: open the pilot in a real (non-headless) Firefox window at 1920 x 1080, wait for it
+// Shared setup: open the pilot in a real (non-headless) browser window at 1920 x 1080, wait for it
 // to load and the trees to bake, and give back the page. Headless browsers and readPixels-free
 // timings miss real compositor and vsync behaviour, so measurements use a visible window.
+import { existsSync } from 'node:fs';
 import puppeteer from 'puppeteer-core';
 
 // APP=web measures the Vite app in web/ (npm run dev, port 5173); the default is the single-file
@@ -10,17 +11,23 @@ export const BASE = process.env.BASE || (APP === 'web' ? 'http://127.0.0.1:5173'
 const PAGE = APP === 'web' ? '/' : '/pilot/';
 export const OUT = process.env.OUT || new URL('./out/', import.meta.url).pathname;
 
-// BROWSER=chrome uses Google Chrome instead of Firefox (it has GPU timer queries, Firefox doesn't).
+// BROWSER=chrome uses Chrome (or Chromium) instead of Firefox (it has GPU timer queries, Firefox
+// doesn't). The first install found is used (macOS, then Linux paths); FIREFOX=/path or
+// CHROME=/path overrides.
 export const BROWSER = process.env.BROWSER || 'firefox';
-const EXE = {
-  firefox: '/Applications/Firefox.app/Contents/MacOS/firefox',
-  chrome: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const CANDIDATES = {
+  firefox: [process.env.FIREFOX, '/Applications/Firefox.app/Contents/MacOS/firefox', '/usr/bin/firefox'],
+  chrome: [process.env.CHROME, '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/usr/bin/google-chrome-stable', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser']
 };
+const EXE = (CANDIDATES[BROWSER] || []).find(p => p && existsSync(p));
 
 export async function openPilot(query = '') {
+  if (!EXE) throw new Error(`No ${BROWSER} found; set ${BROWSER === 'chrome' ? 'CHROME' : 'FIREFOX'}=/path/to/it`);
   const browser = await puppeteer.launch({
-    browser: BROWSER, executablePath: EXE[BROWSER], headless: false,
-    args: ['--width=1920', '--height=1080'], defaultViewport: { width: 1920, height: 1080, deviceScaleFactor: 1 }
+    browser: BROWSER, executablePath: EXE, headless: false,
+    // BROWSER_ARGS adds flags, e.g. BROWSER_ARGS="--ignore-gpu-blocklist" if Chrome falls back to software.
+    args: ['--width=1920', '--height=1080', ...(process.env.BROWSER_ARGS || '').split(' ').filter(Boolean)], defaultViewport: { width: 1920, height: 1080, deviceScaleFactor: 1 }
   });
   const page = await browser.newPage();
   page.on('pageerror', e => console.log('[pageerror]', e.message));
