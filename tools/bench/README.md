@@ -33,6 +33,10 @@ the camera poses and the web run reuses them. On 1 Oct 2026 the port matched the
 difference under 0.1 of 255 per pixel, with under 0.12% of pixels differing by more than 8 (thin
 edges in the reflection, and the boat, whose bobbing follows the clock).
 
+**The target laptop:** `node laptop.mjs` serves `web/dist` itself and measures every preset in
+Chrome; the results go to `results/`. The browser is found on
+macOS or Linux (`FIREFOX=` / `CHROME=` override the path, `BROWSER_ARGS=` adds flags).
+
 `BROWSER=chrome` runs any script in Google Chrome instead of Firefox; Chrome has GPU timer
 queries, so the web app's dynamic resolution uses them there. `dynres.mjs` fakes a slow machine
 by raising the frame-rate target, then restores it, and logs the render scale and frame time:
