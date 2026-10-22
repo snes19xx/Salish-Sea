@@ -63,6 +63,11 @@ export const U = {
   uDetail: { value: 1 } // 1 = terrain crowns and fine relief on, 0 = off
 };
 
+/** Run before every render of the scene, with that pass's camera (its matrices already updated)
+ *  and before three.js gathers what to draw: the terrain picks its patches for the pass here. */
+export const beforeRenderHooks: ((cam: THREE.Camera) => void)[] = [];
+scene.onBeforeRender = (_r, _s, cam) => { for (const fn of beforeRenderHooks) fn(cam); };
+
 /** Objects the depth split treats specially, registered by the modules that make them. */
 export const passes = {
   dome: null as THREE.Object3D | null,
