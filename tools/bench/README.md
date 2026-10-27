@@ -13,6 +13,7 @@ node sailbench.mjs 10                  # Sail mode after 10 s of boost: GPU with
 node treelag.mjs 25                    # do the tree rings keep up during 25 s of boost?
 node maptest.mjs                       # minimap zoom, chart (M), zoom/drag, click to sail there
 node shot.mjs name "" "P.setFly(0.2); 9000"   # screenshots after running JS (P = window.pilot)
+node drawcalls.mjs                     # draw calls and triangles per object and pass, at three spots
 ```
 
 Pass a query string to test a variant, e.g. `node breakdown.mjs 0.02 stride=2` (for `sailbench`
@@ -26,6 +27,10 @@ and `treelag` the query string comes after the seconds).
 node compare.mjs && APP=web node compare.mjs              # the same 5 views drawn by both
 mamba run -n geo_env python tools/bench/imgdiff.py        # per-view pixel difference + heat maps
 ```
+
+To check that a change to the web app keeps its look, save the views before it under another
+name and diff the two: `APP=web TAG=before node compare.mjs`, make the change, then
+`APP=web node compare.mjs` and `imgdiff.py before web`.
 
 `compare.mjs` holds the camera at five spots (three flyover points at 19:20 and noon, the Sail
 start, a night view), stops the loop and draws one frame at a fixed time; the pilot run records

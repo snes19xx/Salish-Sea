@@ -5,8 +5,11 @@
 // reuses them, so the two sets of images can be diffed (imgdiff.py).
 // Usage:  node compare.mjs            (pilot: out/cmp-pilot-<view>.png)
 //         APP=web node compare.mjs    (web app: out/cmp-web-<view>.png)
+//         APP=web TAG=before node compare.mjs   (out/cmp-before-<view>.png: a web-app version to
+//         diff a change against, with `imgdiff.py before web`)
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { APP, OUT, openPilot } from './common.mjs';
+const TAG = process.env.TAG || APP;
 
 const VIEWS = [
   { name: 'fly-start', hour: 19.33, hold: 'P.setFly(0.02)' },
@@ -60,7 +63,7 @@ for (const v of VIEWS) {
   }, APP === 'pilot' ? null : poses[v.name] || null);
   if (APP === 'pilot') poses[v.name] = pose;
   await new Promise(r => setTimeout(r, 300));
-  const path = `${OUT}cmp-${APP}-${v.name}.png`;
+  const path = `${OUT}cmp-${TAG}-${v.name}.png`;
   await page.screenshot({ path });
   console.log(path);
 }

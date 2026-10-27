@@ -1,20 +1,23 @@
-"""Compare the pilot and web app screenshots from compare.mjs.
+"""Compare two sets of screenshots from compare.mjs (by default the pilot's and the web app's).
 
 For each view prints the mean and 99th-percentile difference per pixel (0-255, max over RGB) and
 the share of pixels that differ by more than 8, and writes a heat map (out/diff-<view>.png).
-Usage: mamba run -n geo_env python tools/bench/imgdiff.py
+Usage: mamba run -n geo_env python tools/bench/imgdiff.py [tag A] [tag B]
+       (tags as in out/cmp-<tag>-<view>.png; default pilot web)
 """
 import glob
 import os
+import sys
 
 import numpy as np
 from PIL import Image
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
+A, B = (sys.argv[1:3] + ["pilot", "web"][len(sys.argv[1:3]):])[:2]
 
-for a in sorted(glob.glob(os.path.join(OUT, "cmp-pilot-*.png"))):
-    view = os.path.basename(a)[len("cmp-pilot-"):-4]
-    b = os.path.join(OUT, f"cmp-web-{view}.png")
+for a in sorted(glob.glob(os.path.join(OUT, f"cmp-{A}-*.png"))):
+    view = os.path.basename(a)[len(f"cmp-{A}-"):-4]
+    b = os.path.join(OUT, f"cmp-{B}-{view}.png")
     if not os.path.exists(b):
         continue
     pa = np.asarray(Image.open(a).convert("RGB")).astype(np.int16)
