@@ -3,6 +3,7 @@
    about the forestay (its tack-to-head line), not the vertical, so its head stays on the stay. */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { scene } from '../core/renderer';
 import { waterU } from '../world/water';
 
@@ -10,6 +11,7 @@ import { waterU } from '../world/water';
 // dominated the chase view. The wake scales with it.
 export const BOAT_SCALE = 0.65;
 export const boat = new THREE.Group();
+boat.name = 'boat';
 boat.rotation.order = 'YXZ';
 boat.scale.setScalar(BOAT_SCALE);
 waterU.uBoatScale.value = BOAT_SCALE;
@@ -18,14 +20,62 @@ scene.add(boat);
 const parts = { main: null as THREE.Object3D | null, jib: null as THREE.Object3D | null, rudder: null as THREE.Object3D | null };
 const JIB_AXIS = new THREE.Vector3(0, 1, 0);
 
+// One material for the whole boat, with colour, roughness and metalness per vertex (the model's
+// materials differ in nothing else), so pieces can be merged; the sails need a two-sided copy.
+function boatMaterial(side: THREE.Side) {
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, side });
+  m.onBeforeCompile = s => {
+    s.vertexShader = 'attribute vec2 rm;\nvarying vec2 vRM;\n' + s.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vRM = rm;');
+    s.fragmentShader = 'varying vec2 vRM;\n' + s.fragmentShader
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vRM.x;')
+      .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vRM.y;');
+  };
+  m.customProgramCacheKey = () => 'boat-rm';
+  return m;
+}
+
+// The model has 24 pieces (a part per material, across hull, cabin, rig, sails, rudder...), each
+// its own draw call in every pass. Merge the pieces that move together (the hull and everything
+// fixed to it, or one of the pivots) and are drawn on the same sides: 5 meshes.
+function mergeBoat(model: THREE.Object3D, movers: THREE.Object3D[]) {
+  model.updateMatrixWorld(true);
+  const groups = new Map<string, { parent: THREE.Object3D; side: THREE.Side; geoms: THREE.BufferGeometry[] }>();
+  const pieces: THREE.Mesh[] = [];
+  model.traverse(o => { if ((o as THREE.Mesh).isMesh) pieces.push(o as THREE.Mesh); });
+  const toParent = new THREE.Matrix4();
+  for (const mesh of pieces) {
+    let parent: THREE.Object3D = model;
+    for (let a = mesh.parent; a; a = a.parent) if (movers.includes(a)) { parent = a; break; }
+    const mat = mesh.material as THREE.MeshStandardMaterial;
+    const g = mesh.geometry.clone();
+    g.applyMatrix4(toParent.copy(parent.matrixWorld).invert().multiply(mesh.matrixWorld));
+    const n = g.attributes.position.count, col = new Float32Array(n * 3), rm = new Float32Array(n * 2);
+    // No environment map in this scene, so fully metallic spars would render nearly black.
+    const metal = mat.metalness > 0.3 ? 0.25 : mat.metalness;
+    for (let i = 0; i < n; i++) {
+      col[i * 3] = mat.color.r; col[i * 3 + 1] = mat.color.g; col[i * 3 + 2] = mat.color.b;
+      rm[i * 2] = mat.roughness; rm[i * 2 + 1] = metal;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('rm', new THREE.BufferAttribute(rm, 2));
+    const key = `${parent.uuid} ${mat.side}`;
+    if (!groups.has(key)) groups.set(key, { parent, side: mat.side, geoms: [] });
+    groups.get(key)!.geoms.push(g);
+    mesh.removeFromParent();
+  }
+  const mats = new Map<THREE.Side, THREE.MeshStandardMaterial>();
+  for (const { parent, side, geoms } of groups.values()) {
+    if (!mats.has(side)) mats.set(side, boatMaterial(side));
+    const merged = mergeGeometries(geoms);
+    if (!merged) throw new Error('could not merge the boat pieces');
+    parent.add(new THREE.Mesh(merged, mats.get(side)));
+  }
+  return groups.size;
+}
+
 export function loadBoat() {
   new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}models/sailboat/sailboat.glb`).then(gltf => {
     const model = gltf.scene;
-    // No environment map in this scene, so fully metallic spars would render nearly black.
-    model.traverse(o => {
-      const m = (o as THREE.Mesh).isMesh ? (o as THREE.Mesh).material as THREE.MeshStandardMaterial : null;
-      if (m && m.metalness > 0.3) m.metalness = 0.25;
-    });
     const main = model.getObjectByName('MainPivot'), jib = model.getObjectByName('JibPivot'), rudder = model.getObjectByName('RudderPivot');
     if (!main || !jib || !rudder) throw new Error('sailboat.glb is missing MainPivot, JibPivot or RudderPivot');
     // The jib's head is its highest vertex; the pivot sits at the tack, so the head is the axis.
@@ -36,6 +86,7 @@ export function loadBoat() {
       for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i); if (!head || v.y > head.y) head = v.clone(); }
     });
     if (head) JIB_AXIS.copy(head).normalize();
+    mergeBoat(model, [main, jib, rudder]);
     boat.add(model);
     Object.assign(parts, { main, jib, rudder });
   }).catch(err => console.error('Could not load the sailboat model', err));
