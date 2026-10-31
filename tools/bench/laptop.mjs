@@ -6,10 +6,13 @@
 //   - the GPU cost of one frame at the preset's own scale, with dynamic resolution off
 //   - Balanced only: the same at render scale 0.6 (does pixel count matter on this GPU?) and
 //     without SMAA (what SMAA costs)
-// The first preset is the one the page picks by itself (the detection check).
+// The first preset is the one the page picks by itself (the detection check); on it, three
+// screenshots (flyover start, Gambier, the boat close up) go to out/laptop-<machine>-<view>.png
+// for a look check (out/ isn't tracked by git, but Syncthing carries it to the other machine).
 // Writes results/laptop-<date>-<machine>-<browser>.json and .md.
 // Usage: node laptop.mjs            (about 6 minutes)
-//        node laptop.mjs soak       (adds 15 minutes of flyover on the detected preset: throttling)
+//        node laptop.mjs soak       (adds 15 minutes of flyover on the detected preset: throttling;
+//                                    Chrome's own log goes to out/chrome-soak-<machine>.log)
 import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { hostname } from 'node:os';
@@ -43,9 +46,27 @@ await new Promise(r => server.listen(PORT, '127.0.0.1', r));
 process.env.APP = 'web';
 process.env.BASE = `http://127.0.0.1:${PORT}`;
 process.env.BROWSER ||= 'chrome';
-const { openPilot, BROWSER } = await import('./common.mjs');
+const { openPilot, BROWSER, OUT } = await import('./common.mjs');
+mkdirSync(OUT, { recursive: true });
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
+// Screenshots for checking the look on this GPU (terrain holes or cracks, the boat).
+const SHOTS = [
+  ['fly-start', "P.setMode('fly'); P.setFly(0.02)"],
+  ['fly-gambier', 'P.setFly(0.35)'],
+  ['boat', "P.setMode('sail'); P.sail.kn = 0; P.look.dist = 14; P.look.yaw = 1.3"]
+];
+const screenshots = async page => {
+  const paths = [];
+  for (const [name, js] of SHOTS) {
+    await page.evaluate(js => { const P = window.pilot; eval(js); }, js);
+    await wait(4000);
+    const path = `${OUT}laptop-${hostname()}-${name}.png`;
+    await page.screenshot({ path });
+    paths.push(path);
+  }
+  return paths;
+};
 const info = page => page.evaluate(() => {
   const P = window.pilot;
   return {
@@ -131,6 +152,10 @@ for (const want of presets) {
       await page.evaluate(() => { const P = window.pilot; P.setRenderScale(P.quality.renderScale); P.quality.aa = 'none'; });
       r.costNoAA = await frameCost(page);
     }
+    if (!want) {
+      await page.evaluate(() => { const P = window.pilot; P.setQuality(P.quality.name); }); // the preset's look again
+      r.screenshots = await screenshots(page);
+    }
     results.presets.push(r);
     console.log(JSON.stringify(r));
   } finally {
@@ -140,17 +165,24 @@ for (const want of presets) {
 
 if (SOAK) {
   console.log('== soak (15 min)');
+  // The first soak lost its page after a minute with no reason given: keep Chrome's log this time.
+  if (BROWSER === 'chrome') process.env.BROWSER_ARGS = `${process.env.BROWSER_ARGS || ''} --enable-logging --v=0 --log-file=${OUT}chrome-soak-${hostname()}.log`;
   const { browser, page } = await openPilot('');
+  page.on('error', e => console.log('[page crashed]', e.message));
+  page.on('close', () => console.log('[page closed]'));
+  results.soak = [];
   try {
-    results.soak = [];
     for (let minute = 1; minute <= 15; minute++) {
       await wait(50000);
       const s = await live(page, 10000);
       results.soak.push({ minute, fps: s.fps, p99: s.p99, scale: s.endScale, measuredMs: s.measuredMs });
       console.log(JSON.stringify(results.soak.at(-1)));
     }
+  } catch (e) {
+    results.soakError = { afterMinute: results.soak.length, message: e.message };
+    console.log('[soak stopped]', JSON.stringify(results.soakError));
   } finally {
-    await browser.close();
+    await browser.close().catch(() => {});
   }
 }
 server.close();
@@ -159,7 +191,7 @@ server.close();
 const p = results.presets, first = p[0] || {};
 const cost = c => `${c.ms} / ${c.gpuMs ?? 'n/a'}`;
 const row = r => `| ${r.preset}${r.requested === 'detected' ? ' (picked by the page)' : ''} | ${r.aa} | ${r.targetFps} | ` +
-  `${cost(r.cost)} at ${r.cost.scale} | ${r.fly.fps} / ${r.fly.p99} / ${r.fly.pctLate}% | ${r.fly.endScale} | ` +
+  `${cost(r.cost)} at ${r.cost.scale} | ${r.cost.drawCalls} | ${r.fly.fps} / ${r.fly.p99} / ${r.fly.pctLate}% | ${r.fly.endScale} | ` +
   `${r.sailBoost.fps} / ${r.sailBoost.p99} / ${r.sailBoost.pctLate}% | ${r.sailBoost.endScale} | ` +
   `${r.fly.timing === 'gpu' ? r.fly.measuredMs : 'n/a'} / ${r.cost.gpuMs ?? 'n/a'} |`;
 const bal = p.find(r => r.preset === 'balanced');
@@ -171,8 +203,8 @@ let md = `### ${results.when.slice(0, 10)}, ${BROWSER}\n\n` +
   `Frame ms is wall / GPU timer, at the preset's fixed scale. Late = frames over 1.5x the target's budget. ` +
   `Live / clean GPU ms: what dynamic resolution's timer read in the live flyover against the clean GPU time; ` +
   `if live is far higher (at the same scale), dynamic resolution lowers the scale for nothing.\n\n` +
-  `| Preset | AA | Target fps | Frame ms | Fly fps / p99 ms / % late | Fly end scale | Sail boost fps / p99 ms / % late | Sail end scale | Live / clean GPU ms |\n` +
-  `| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n` + p.map(row).join('\n') + '\n';
+  `| Preset | AA | Target fps | Frame ms | Draw calls | Fly fps / p99 ms / % late | Fly end scale | Sail boost fps / p99 ms / % late | Sail end scale | Live / clean GPU ms |\n` +
+  `| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n` + p.map(row).join('\n') + '\n';
 if (bal) {
   md += `\nBalanced, fixed scale (wall / GPU ms): ${cost(bal.cost)} at ${bal.cost.scale}; ${cost(bal.costAtScale06)} at 0.6 ` +
     `(scale 0.6 saves ${diff(bal.cost.gpuMs, bal.costAtScale06.gpuMs)} GPU ms); ${cost(bal.costNoAA)} without SMAA ` +
@@ -180,6 +212,7 @@ if (bal) {
 }
 if (results.soak) {
   md += `\nSoak (detected preset, flyover): ` + results.soak.map(s => `${s.minute}m ${s.fps} fps @${s.scale}`).join(', ') + '\n';
+  if (results.soakError) md += `Soak stopped after minute ${results.soakError.afterMinute}: ${results.soakError.message} (see out/chrome-soak-${hostname()}.log)\n`;
 }
 // Kept in results/ (tracked, unlike out/), named by date and machine.
 const RESULTS = fileURLToPath(new URL('./results/', import.meta.url));
