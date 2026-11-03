@@ -14,6 +14,64 @@ import SKY_COMMON from '../shaders/sky_common.glsl?raw';
 import terrainVert from '../shaders/terrain.vert?raw';
 import terrainFrag from '../shaders/terrain.frag?raw';
 
+// Rock and pebble photo textures (Poly Haven, CC0, 1k) for close-up ground, shared by every grid.
+const loader = new THREE.TextureLoader();
+function groundTexture(name: string, colour: boolean) {
+  const t = loader.load(`${import.meta.env.BASE_URL}textures/${name}`);
+  t.name = name.replace(/_(diff|nor_gl)_1k\.jpg$/, '');
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  t.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  return t;
+}
+// ?rock= and ?peb= (or the debug panel) pick the textures. Mean linear colour of each; only the
+// defaults are in git, the others are local test files in web/public/textures/.
+const TEX_MEAN: Record<string, [number, number, number]> = {
+  aerial_rocks_02: [0.169, 0.119, 0.049], dry_river_pebbles: [0.228, 0.160, 0.096], gray_rocks: [0.195, 0.171, 0.134],
+  lichen_rock: [0.064, 0.049, 0.034], low_tide_rocks: [0.140, 0.107, 0.068], mossy_rock: [0.161, 0.154, 0.100],
+  rock_3: [0.173, 0.121, 0.079], rocks_ground_06: [0.299, 0.241, 0.183], seaside_rock: [0.061, 0.052, 0.039]
+};
+// Brightness of a texture relative to the others at the same slider setting (1 if not listed).
+const TEX_GAIN: Record<string, number> = { lichen_rock: 0.75 };
+// Applied to the brightness target, so the texture and its faded distant colour darken together.
+const gain = (name: string) => TEX_GAIN[name] ?? 1;
+export const ROCK_TEXTURES = ['aerial_rocks_02', 'mossy_rock', 'rock_3', 'lichen_rock', 'seaside_rock'];
+export const PEBBLE_TEXTURES = ['dry_river_pebbles', 'gray_rocks', 'low_tide_rocks', 'rocks_ground_06'];
+const pick = (key: string, fallback: string) => { const v = params.get(key) || ''; return v in TEX_MEAN ? v : fallback; };
+/** The ground textures in use and their brightness (linear albedo); the debug panel changes them. */
+export const groundLook = {
+  // Defaults: picked after testing on the shore (2 Nov 2026).
+  rock: pick('rock', 'lichen_rock'), peb: pick('peb', 'gray_rocks'),
+  rockLum: parseFloat(params.get('rocklum') || '') || 0.05, pebLum: parseFloat(params.get('peblum') || '') || 0.045
+};
+const GROUND_TEX = {
+  tRock: { value: groundTexture(`${groundLook.rock}_diff_1k.jpg`, true) },
+  tRockN: { value: groundTexture(`${groundLook.rock}_nor_gl_1k.jpg`, false) },
+  tPeb: { value: groundTexture(`${groundLook.peb}_diff_1k.jpg`, true) },
+  tPebN: { value: groundTexture(`${groundLook.peb}_nor_gl_1k.jpg`, false) },
+  uRockMean: { value: new THREE.Vector3(...TEX_MEAN[groundLook.rock]) },
+  uPebMean: { value: new THREE.Vector3(...TEX_MEAN[groundLook.peb]) },
+  uRockLum: { value: groundLook.rockLum * gain(groundLook.rock) }, uPebLum: { value: groundLook.pebLum * gain(groundLook.peb) }
+};
+/** Apply groundLook: swap textures if they changed, and write the choice into the address bar. */
+export function applyGroundLook() {
+  const swap = (col: 'tRock' | 'tPeb', nrm: 'tRockN' | 'tPebN', mean: 'uRockMean' | 'uPebMean', name: string) => {
+    if (GROUND_TEX[col].value.name === name) return;
+    GROUND_TEX[col].value.dispose(); GROUND_TEX[nrm].value.dispose();
+    GROUND_TEX[col].value = groundTexture(`${name}_diff_1k.jpg`, true);
+    GROUND_TEX[nrm].value = groundTexture(`${name}_nor_gl_1k.jpg`, false);
+    GROUND_TEX[mean].value.set(...TEX_MEAN[name]);
+  };
+  swap('tRock', 'tRockN', 'uRockMean', groundLook.rock);
+  swap('tPeb', 'tPebN', 'uPebMean', groundLook.peb);
+  GROUND_TEX.uRockLum.value = groundLook.rockLum * gain(groundLook.rock);
+  GROUND_TEX.uPebLum.value = groundLook.pebLum * gain(groundLook.peb);
+  const url = new URL(location.href);
+  url.searchParams.set('rock', groundLook.rock); url.searchParams.set('peb', groundLook.peb);
+  url.searchParams.set('rocklum', groundLook.rockLum.toFixed(3)); url.searchParams.set('peblum', groundLook.pebLum.toFixed(3));
+  history.replaceState(null, '', url);
+}
+
 const PATCH = 32; // cells along a patch side
 // A patch is split into four finer ones when the camera is closer than this many patch widths.
 // Larger keeps fine detail further out (more triangles); ?lod= to try others.
@@ -115,7 +173,8 @@ function terrainMesh(g: Grid, stride: number, hole: THREE.Vector4, heightAt: ((x
   geometry.instanceCount = 0;
   const material = new THREE.ShaderMaterial({
     uniforms: {
-      ...U, uHole: { value: hole }, tTerrain: { value: map },
+      // Fake fine relief only on the coarse grids; the 2 m lidar has the real thing.
+      ...U, ...GROUND_TEX, uHole: { value: hole }, tTerrain: { value: map }, uRelief: { value: g.dx >= 10 ? 1 : 0 },
       uGrid: { value: new THREE.Vector3(g.minX, g.minZ, step) }, uLast: { value: new THREE.Vector2(SX, SZ) }
     },
     vertexShader: terrainVert,
@@ -179,7 +238,12 @@ export function buildTerrain() {
   const g = geo.detail, BG = geo.backdrop;
   // Detail: ?stride=2 for a lighter mesh. sampleH keeps full resolution.
   const STRIDE = Math.max(1, parseInt(params.get('stride') || '', 10) || 1);
-  const detail = terrainMesh(g, STRIDE, new THREE.Vector4(1, 1, 0, 0), null, 1);
+  // The 2 m lidar window, drawn first, with a hole of its size cut in the 30 m ground. Its edges
+  // follow the 30 m triangles (tools/spike_lidar.py), so the two meet without a step.
+  const L = geo.lidar;
+  const lidarRect = L ? new THREE.Vector4(L.minX, L.minZ, L.minX + (L.nx - 1) * L.dx, L.minZ + (L.nz - 1) * L.dx) : new THREE.Vector4(1, 1, 0, 0);
+  if (L) scene.add(terrainMesh(L, 1, new THREE.Vector4(1, 1, 0, 0), null, 0).mesh);
+  const detail = terrainMesh(g, STRIDE, lidarRect, null, 1);
   scene.add(detail.mesh);
   // Backdrop: not drawn inside the detail area (inset by 300 m so the two overlap slightly), and
   // lowered a little under the detail so they never fight for the same pixels.

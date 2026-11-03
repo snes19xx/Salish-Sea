@@ -3,10 +3,13 @@
 import type GUIType from 'lil-gui';
 import type StatsType from 'stats-gl';
 import { chaseView } from '../boat/chase';
-import { sailing, setWind, wind } from '../boat/sailing';
+import { sail, sailing, setWind, wind } from '../boat/sailing';
 import { WAKE } from '../boat/wake';
 import { flyTuning } from '../flyover/path';
 import { setHour, setWeather } from '../ui/controls';
+import { sailTo } from '../ui/map';
+import { LIDAR_ON } from '../world/data';
+import { PEBBLE_TEXTURES, ROCK_TEXTURES, applyGroundLook, groundLook } from '../world/terrain';
 import { forestTuning } from '../world/trees';
 import { GPU, PRESETS, applyQuality, quality, setQuality, type QualityName } from './quality';
 import { dynRes, resetDynRes } from './dynres';
@@ -63,6 +66,27 @@ export async function toggleGui() {
   s.add(state, 'hour', 0, 23.95, 0.05).name('Time of day').onChange(setHour).listen();
   s.add(state, 'weather', { Clear: 'clear', Haze: 'haze', Overcast: 'over' }).name('Weather').onChange(setWeather).listen();
   s.add(renderer, 'toneMappingExposure', 0.4, 2, 0.01).name('Exposure');
+
+  // Shore rock and pebble textures, their brightness, and steep rocky shores to jump to.
+  // The choice is written into the address bar, so the URL can be sent back as a report.
+  const g = gui.addFolder('Shore rock (test)');
+  g.add(groundLook, 'rock', ROCK_TEXTURES).name('Rock texture').onChange(applyGroundLook);
+  g.add(groundLook, 'peb', PEBBLE_TEXTURES).name('Pebble texture').onChange(applyGroundLook);
+  g.add(groundLook, 'rockLum', 0.03, 0.25, 0.005).name('Rock brightness').onChange(applyGroundLook);
+  g.add(groundLook, 'pebLum', 0.03, 0.3, 0.005).name('Pebble brightness').onChange(applyGroundLook);
+  const spots: Record<string, [number, number, number]> = {
+    'Whytecliff cliff': [7490, 2617, 147], 'Horseshoe Bay east': [8383, 2524, 291], 'Lookout Point': [7558, 3180, 111]
+  };
+  const jump = { spot: Object.keys(spots)[0] };
+  g.add(jump, 'spot', Object.keys(spots)).name('Jump to shore').onChange((k: string) => {
+    const [x, z, hdg] = spots[k];
+    sailTo(x, z); sail.hdg = hdg;
+  });
+  g.add({ lidar: LIDAR_ON }, 'lidar').name('2 m lidar (reloads)').onChange((on: boolean) => {
+    const url = new URL(location.href);
+    if (on) url.searchParams.delete('lidar'); else url.searchParams.set('lidar', '0');
+    location.href = url.toString();
+  });
 
   const b = gui.addFolder('Sailing');
   b.add(sailing, 'boostKn', 10, 60, 1).name('Boost (kn)');

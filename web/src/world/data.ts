@@ -19,6 +19,8 @@ export interface AreaMeta {
 
 export const AREA = (params.get('area') || 'howe').replace(/[^a-z0-9_-]/gi, '');
 export const DATA = `${import.meta.env.BASE_URL}data/${AREA}/`;
+/** The 2 m lidar window is on by default where one exists (howe); ?lidar=0 turns it off. */
+export const LIDAR_ON = AREA === 'howe' && params.get('lidar') !== '0';
 
 const EDGE_BLEND = 900; // detail heights blend into the backdrop over this many metres at the grid edge
 const BACK_FADE = 3000; // the backdrop's own outer edge sinks into the sea over this distance
@@ -32,6 +34,8 @@ export const geo = {
   seabed: new Float32Array(4),
   mask: new Uint8Array(4), // 1 = built-up
   backdrop: { nx: 0, nz: 0, dx: 100, minX: 0, minZ: 0, h: new Float32Array(0) } as Grid, // empty until loaded
+  // A 2 m lidar window around Horseshoe Bay (tools/spike_lidar.py), drawn over the 30 m ground.
+  lidar: null as Grid | null,
   meta: null as AreaMeta | null
 };
 
@@ -43,6 +47,7 @@ export function gridSample(g: Grid, x: number, z: number, outside: number) {
 }
 /** Ground height at (x, z): the detail grid, the backdrop around it, -300 m beyond both. */
 export function sampleH(x: number, z: number) {
+  if (geo.lidar) { const l = gridSample(geo.lidar, x, z, NaN); if (l === l) return l; }
   const g = geo.detail;
   const fx = (x - g.minX) / g.dx, fz = (z - g.minZ) / g.dx;
   if (fx < 0 || fz < 0 || fx >= g.nx - 1 || fz >= g.nz - 1) return gridSample(geo.backdrop, x, z, -300);
@@ -89,4 +94,11 @@ export async function loadData() {
   geo.detail = { nx: NX, nz: NZ, dx: DX, minX: meta.minX, minZ: meta.minZ, h: H };
   geo.maxX = meta.minX + (NX - 1) * DX; geo.maxZ = meta.minZ + (NZ - 1) * DX;
   geo.seabed = seabed; geo.mask = MASK; geo.backdrop = BG; geo.meta = meta;
+  if (LIDAR_ON) {
+    const [lm, lb] = await Promise.all([
+      get('pilot_lidar.json').then(r => r.json() as Promise<{ width: number; height: number; spacing: number; minX: number; minZ: number }>),
+      get('pilot_lidar.bin').then(r => r.arrayBuffer())
+    ]);
+    geo.lidar = { nx: lm.width, nz: lm.height, dx: lm.spacing, minX: lm.minX, minZ: lm.minZ, h: new Float32Array(lb) };
+  }
 }
