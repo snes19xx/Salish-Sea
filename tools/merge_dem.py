@@ -33,6 +33,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 NONNA_NIL = 1e30  # NONNA marks no-data with float32 max (3.4e38)
 SHORE_BAND_PX = 3  # blend this many pixels (90 m) either side of the shoreline
 MIN_LAKE_AREA_M2 = 20_000
+LAKE_BED_M = 1.0  # ground inside a lake is lowered to this far below its surface
 BACKDROP_SEA_M = -40.0  # the backdrop has no bathymetry; its sea floor sits at this depth
 BACKDROP_LAND_MIN_M = 0.5  # backdrop cells at or below this are treated as sea
 
@@ -136,8 +137,9 @@ def rasterize_vectors(path, transform, width, height):
 
 
 def lakes(area, land_dem, sea, transform, width, height):
+    """Write lakes.geojson; return [(UTM outline, surface height)] for burn_lakes."""
     feats = json.loads((area.vectors / "water_osm.geojson").read_text())["features"]
-    out = []
+    out, found = [], []
     for f in feats:
         geom = to_utm_geom(shape(f["geometry"]))
         if geom.area < MIN_LAKE_AREA_M2:
@@ -154,19 +156,32 @@ def lakes(area, land_dem, sea, transform, width, height):
             continue
         props = dict(f["properties"], surface_m=round(surface, 2), area_m2=round(geom.area))
         out.append({"type": "Feature", "properties": props, "geometry": f["geometry"]})
+        found.append((geom, surface))
     (area.vectors / "lakes.geojson").write_text(
         json.dumps({"type": "FeatureCollection", "features": out}))
     named = ", ".join(sorted({f["properties"]["name"] for f in out if f["properties"]["name"]}))
     print(f"Lakes: {len(out)} above sea level ({named})")
+    return found
 
 
-def backdrop(area):
+def burn_lakes(h, found, transform):
+    """Lower the ground inside each lake to LAKE_BED_M below its surface. The surface is the DEM's
+    20th percentile there, so most of the lake's DEM sits above it and would poke through the flat
+    water the app draws at that height."""
+    for geom, surface in found:
+        px = rasterize([(geom, 1)], out_shape=h.shape, transform=transform, fill=0,
+                       dtype="uint8").astype(bool)
+        h[px] = np.minimum(h[px], surface - LAKE_BED_M)
+
+
+def backdrop(area, found):
     """Low-detail heights around the pilot: MRDEM land, flat sea floor elsewhere."""
     transform, width, height = area.grid(backdrop=True)
     with rasterio.open(area.raw / "land_backdrop.tif") as src:
         b = src.read(1)
     land = np.isfinite(b) & (b > BACKDROP_LAND_MIN_M)
     b = np.where(land, b, BACKDROP_SEA_M).astype("float32")
+    burn_lakes(b, found, transform)
     profile = dict(driver="GTiff", width=width, height=height, count=1, crs=UTM, dtype="float32",
                    transform=transform, compress="deflate", tiled=True, predictor=3)
     with rasterio.open(area.work / "backdrop.tif", "w", **profile) as dst:
@@ -257,6 +272,8 @@ def main():
     h[sea] = np.minimum(h[sea], -0.3)
 
     towns = rasterize_vectors(area.vectors / "towns_osm.geojson", transform, width, height) & land
+    found = lakes(area, land_dem, sea, transform, width, height)
+    burn_lakes(h, found, transform)
 
     with rasterio.open(area.work / "merged_30m.tif", "w", dtype="float32", nodata=None,
                        predictor=3, **profile) as dst:
@@ -268,8 +285,7 @@ def main():
     print(f"Merged: {width} x {height}, {land.mean():.1%} land ({towns.sum() / land.sum():.1%} "
           f"of it built-up), range {h.min():.1f} to {h.max():.1f} m")
 
-    lakes(area, land_dem, sea, transform, width, height)
-    backdrop(area)
+    backdrop(area, found)
     preview(area, h, land, towns, transform, lines)
     print(f"Wrote {area.work.relative_to(area.work.parents[2])}/")
 
