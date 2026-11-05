@@ -1,6 +1,7 @@
 // Water: waves, planar reflection, depth colour, shore foam and the boat's Kelvin wake.
 // Preceded by sky_common.glsl and noise.glsl.
 uniform sampler2D tRefl; uniform sampler2D tHeight; uniform vec4 hB; uniform vec2 hN; uniform vec2 uWindDir;
+uniform sampler2D tHeightL; uniform vec4 lB; uniform vec2 lN; // the 2 m lidar window, if any (lN = 0)
 uniform float uWaveAmp; uniform vec4 uBoat; uniform float uBoatScale; uniform float fogDensity; uniform float uTime; uniform vec3 ambGround;
 uniform vec4 uTrack[96]; uniform float uTrackS[96]; uniform float uWakeClock; uniform vec4 uWakeBoat; uniform float uWakeV;
 uniform vec4 uChunk[12];
@@ -118,6 +119,8 @@ void main(){
   vec2 tuv = ((vW.xz - hB.xy) / hB.z + 0.5) / hN;
   float bed = -300.0;
   if (tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) bed = texture2D(tHeight, tuv).r;
+  vec2 luv = ((vW.xz - lB.xy) / lB.z + 0.5) / max(lN, vec2(1.0));
+  if (lN.x > 0.0 && luv.x > 0.0 && luv.y > 0.0 && luv.x < 1.0 && luv.y < 1.0) bed = texture2D(tHeightL, luv).r;
   float depth = max(-bed, 0.0);
   vec2 ruv = vM.xy / vM.w + n.xz * (0.05 / (1.0 + dist * 0.0035));
   vec3 refl = texture2D(tRefl, ruv).rgb;
@@ -146,8 +149,9 @@ void main(){
   float fn = mix(vnoise(vW.xz * 0.45 + vec2(uTime * 0.25, -uTime * 0.18)), 0.5, smoothstep(0.5, 1.4, fp)) * 0.6
            + mix(vnoise(vW.xz * 1.7 - uTime * 0.4), 0.5, smoothstep(0.15, 0.4, fp)) * 0.4;
   float surf = 0.5 + 0.5 * sin(depth * 3.5 - uTime * 1.6 + fn * 3.0);
-  float foam = (1.0 - smoothstep(0.15, 1.9, depth)) * smoothstep(0.4, 0.78, fn * 0.7 + surf * 0.5);
-  foam += (1.0 - smoothstep(0.0, 0.3, depth)) * 0.55;
+  // Shore foam: a thin broken line, not a band (calm sound, rocky shore).
+  float foam = (1.0 - smoothstep(0.05, 0.3, depth)) * smoothstep(0.55, 0.85, fn * 0.7 + surf * 0.5) * 0.6;
+  foam += (1.0 - smoothstep(0.0, 0.1, depth)) * 0.3;
   foam += wakeFoam;
   foam = clamp(foam, 0.0, 1.0) * (1.0 - smoothstep(700.0, 1600.0, dist));
   vec3 foamCol = (sunCol * max(sunDir.y, 0.0) + ambSky * 1.6) * 0.62;

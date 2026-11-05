@@ -16,6 +16,9 @@ const reflRT = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, sa
 export const waterU = {
   tRefl: { value: reflRT.texture }, tHeight: { value: null as THREE.Texture | null },
   hB: { value: new THREE.Vector4(0, 0, 30, 0) }, hN: { value: new THREE.Vector2(2, 2) },
+  // The 2 m lidar window's heights, where there is one (lN = 0 when not).
+  tHeightL: { value: null as THREE.Texture | null },
+  lB: { value: new THREE.Vector4(0, 0, 2, 0) }, lN: { value: new THREE.Vector2(0, 0) },
   uTexMat: { value: textureMatrix }, uWindDir: { value: new THREE.Vector2(0.94, 0.34) },
   uWaveAmp: { value: 1 }, uBoat: { value: new THREE.Vector4(0, 0, 0, 0) },
   uBoatScale: { value: 1 }, // the boat model's scale
@@ -57,6 +60,16 @@ export function setSeabed() {
   waterU.tHeight.value = ht;
   waterU.hB.value.set(g.minX, g.minZ, g.dx, 0);
   waterU.hN.value.set(g.nx, g.nz);
+  // Inside the lidar window the shoreline follows the lidar, so depth (foam, seabed showing) must too.
+  const L = geo.lidar;
+  if (L) {
+    const lt = new THREE.DataTexture(L.h, L.nx, L.nz, THREE.RedFormat, THREE.FloatType);
+    lt.magFilter = lt.minFilter = lin ? THREE.LinearFilter : THREE.NearestFilter;
+    lt.needsUpdate = true;
+    waterU.tHeightL.value = lt;
+    waterU.lB.value.set(L.minX, L.minZ, L.dx, 0);
+    waterU.lN.value.set(L.nx, L.nz);
+  }
 }
 
 /** Objects left out of the reflection on presets without reflected trees (the tree rings). */

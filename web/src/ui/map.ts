@@ -230,7 +230,7 @@ export function canSailTo(x: number, z: number) {
 }
 // Fast travel: the boat starts from rest at the new spot, the chase camera snaps behind it, and
 // both tree rings are rebuilt there at once (one long frame) rather than filling in over a second.
-function sailTo(x: number, z: number) {
+export function sailTo(x: number, z: number) {
   sail.x = x; sail.z = z; sail.kn = 0;
   resetForest();
   if (state.mode !== 'sail') setMode('sail'); else view.camInit = false;

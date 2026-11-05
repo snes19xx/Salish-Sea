@@ -158,7 +158,8 @@ function treeChance(x: number, z: number, h: number) {
   if (h < 1.5 || h > 1350) return 0;
   const gx = sampleH(x + 10, z) - sampleH(x - 10, z), gz = sampleH(x, z + 10) - sampleH(x, z - 10);
   const grade = Math.hypot(gx, gz) / 20;
-  let c = 0.95 * (1 - smooth(0.9, 1.5, grade)) * (1 - 0.85 * smooth(900, 1350, h));
+  // Trees start a few metres above the water, leaving the shore's band of bare rock.
+  let c = 0.95 * (1 - smooth(0.9, 1.5, grade)) * (1 - 0.85 * smooth(900, 1350, h)) * smooth(2.5, 8, h);
   if (isTown(x, z)) c *= 0.12;
   return c * (0.8 + 0.2 * snoise(x * 0.004, z * 0.004));
 }
