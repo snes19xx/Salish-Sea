@@ -1,7 +1,7 @@
 // Sky dome (sky colour, sun, night sky, clouds) and the sky state: sun position, light colours,
 // weather and haze for the time of day.
 import * as THREE from 'three';
-import { U, hemi, passes, scene, sunLight } from '../core/renderer';
+import { U, hemi, passes, renderer, scene, sunLight } from '../core/renderer';
 import { state, type Weather } from '../core/state';
 import { lerp, smooth } from '../core/util';
 import { setText } from '../ui/dom';
@@ -24,6 +24,26 @@ export const dome = new THREE.Mesh(new THREE.SphereGeometry(60000, 48, 24), skyM
 dome.renderOrder = 10; dome.frustumCulled = false;
 scene.add(dome);
 passes.dome = dome;
+
+// Sky light on the boat (and anything else with a standard material): the sky dome rendered into a
+// prefiltered environment map, rebuilt shortly after the time or weather changes. Below the
+// horizon it sees a dark floor the colour of the sea, not the sky shader's pale haze.
+const envScene = new THREE.Scene();
+envScene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), skyMat));
+const envFloorMat = new THREE.MeshBasicMaterial({ fog: false });
+envScene.add(new THREE.Mesh(new THREE.CircleGeometry(500, 32).rotateX(-Math.PI / 2).translate(0, -1, 0), envFloorMat));
+let pmrem: THREE.PMREMGenerator | null = null, envRT: THREE.WebGLRenderTarget | null = null;
+let envTimer: ReturnType<typeof setTimeout> | undefined;
+function buildEnvMap() {
+  pmrem ??= new THREE.PMREMGenerator(renderer);
+  const a = U.ambSky.value;
+  envFloorMat.color.setRGB(a.x * 0.12, a.y * 0.2, a.z * 0.24); // dark blue-green water
+  const rt = pmrem.fromScene(envScene, 0, 0.1, 1000, { size: 128 });
+  envRT?.dispose();
+  envRT = rt;
+  scene.environment = rt.texture;
+  hemi.visible = false; // the environment map takes over the sky fill light
+}
 
 export const WEATHER: Record<Weather, { fog: number; over: number; waves: number; stars: number }> = {
   clear: { fog: 4.2e-5, over: 0, waves: 0.9, stars: 1 },
@@ -73,6 +93,8 @@ export function updateSky() {
   fogC.lerp(new THREE.Color(grey, grey, grey * 1.03), w.over * 0.85);
   const fog = scene.fog as THREE.FogExp2;
   fog.color.copy(fogC); fog.density = w.fog * 0.85;
+  clearTimeout(envTimer);
+  envTimer = setTimeout(buildEnvMap, 200); // once the slider stops
   const hh = Math.floor(t), mm = Math.floor((t - hh) * 60);
   setText('#clock', `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
 }
