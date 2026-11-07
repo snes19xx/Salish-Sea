@@ -53,7 +53,7 @@ export async function toggleGui() {
   };
   q.add(live, 'scale').name('Scale in use').disable().listen();
   q.add(live, 'ms').name('Frame ms (measured by)').disable().listen();
-  q.add(quality, 'reflScale', 0.15, 1, 0.05).name('Reflection scale').onFinishChange(applyQuality);
+  q.add(quality, 'reflScale', 0, 1, 0.05).name('Reflection scale (0 = sky)').onFinishChange(applyQuality);
   q.add(quality, 'reflTrees').name('Trees in reflection').onChange(applyQuality);
   q.add(quality, 'farTrees').name('Far tree ring').onChange(applyQuality);
   q.add(quality, 'detail').name('Terrain detail').onChange(applyQuality);

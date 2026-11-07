@@ -1,7 +1,7 @@
 // The sea: wave normals, planar reflection, depth colour, shore foam and the boat's wake (the
 // wake's track lives in boat/wake.ts and feeds the uniforms here).
 import * as THREE from 'three';
-import { quality } from '../core/quality';
+import { onQualityChange, quality } from '../core/quality';
 import { U, camera, mirrorCam, renderSplit, renderer, resizeHooks, scene } from '../core/renderer';
 import { geo } from './data';
 import NOISE from '../shaders/noise.glsl?raw';
@@ -34,6 +34,17 @@ const waterMat = new THREE.ShaderMaterial({
   vertexShader: waterVert,
   fragmentShader: SKY_COMMON + NOISE + waterFrag
 });
+// Presets without a planar reflection (reflScale 0, Low) compile the shader with SKY_REFL: the
+// water reflects the sky colour instead. A define, not a uniform branch, so the other presets
+// don't carry the extra code.
+function setReflectionPath() {
+  const sky = quality.reflScale <= 0;
+  if (sky === 'SKY_REFL' in waterMat.defines) return;
+  if (sky) waterMat.defines.SKY_REFL = ''; else delete waterMat.defines.SKY_REFL;
+  waterMat.needsUpdate = true;
+}
+setReflectionPath();
+onQualityChange(setReflectionPath);
 
 // The sea is a 200 km grid that follows the camera, with cells about 1 m wide under the camera and
 // a few km wide at the edge (spacing grows with the cube of the distance from the centre). Two huge
@@ -72,6 +83,30 @@ export function setSeabed() {
   }
 }
 
+/**
+ * Lakes: flat water at each lake's surface height (OSM outline, height from the DEM; see
+ * tools/merge_dem.py), drawn with the sea's shader without depth, wake or planar reflection. They
+ * sit 0.3 m above the surface height so the DEM, flattened there, stays under them.
+ */
+export function buildLakes() {
+  const lakeMat = waterMat.clone();
+  lakeMat.uniforms = waterMat.uniforms; // clone() copies the uniforms; share the sea's so time, sun and waves stay in step
+  lakeMat.defines = { LAKE: '' };
+  for (const lake of geo.meta?.lakes ?? []) {
+    for (const ring of lake.rings) {
+      if (ring.length < 4) continue;
+      // Shape in (x, -z) and rotated -90 degrees about x, so it lies at world (x, z) facing up.
+      const shape = new THREE.Shape(ring.map(([x, z]) => new THREE.Vector2(x, -z)));
+      const geom = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2);
+      geom.translate(0, lake.surface + 0.3, 0);
+      const mesh = new THREE.Mesh(geom, lakeMat);
+      mesh.renderOrder = 4;
+      mesh.name = lake.name ?? 'lake';
+      scene.add(mesh);
+    }
+  }
+}
+
 /** Objects left out of the reflection on presets without reflected trees (the tree rings). */
 export const notReflectedOnLowerPresets: THREE.Object3D[] = [];
 
@@ -80,6 +115,7 @@ const BIAS = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 
 const REFLECT_CLIP = [new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)];
 /** Draw the scene mirrored in the sea plane into the reflection target. */
 export function renderReflection() {
+  if (quality.reflScale <= 0) return; // sky-only reflection (Low)
   const cp = camera.position;
   camera.getWorldDirection(_dir);
   _up.set(0, 1, 0).applyQuaternion(camera.quaternion); _up.y = -_up.y;

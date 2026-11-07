@@ -15,6 +15,7 @@ export interface AreaMeta {
   flyover: [number, number, number][];
   boat: { x: number; z: number; hdg: number };
   wind: { from: number; kn: number };
+  lakes?: { name: string | null; surface: number; rings: [number, number][][] }[];
 }
 
 export const AREA = (params.get('area') || 'howe').replace(/[^a-z0-9_-]/gi, '');

@@ -1,8 +1,7 @@
 // Water: waves, planar reflection, depth colour, shore foam and the boat's Kelvin wake.
 // Preceded by sky_common.glsl and noise.glsl.
 uniform sampler2D tRefl; uniform sampler2D tHeight; uniform vec4 hB; uniform vec2 hN; uniform vec2 uWindDir;
-uniform sampler2D tHeightL; uniform vec4 lB; uniform vec2 lN; // the 2 m lidar window, if any (lN = 0)
-uniform float uWaveAmp; uniform vec4 uBoat; uniform float uBoatScale; uniform float fogDensity; uniform float uTime; uniform vec3 ambGround;
+uniform sampler2D tHeightL; uniform vec4 lB; uniform vec2 lN; // the 2 m lidar window, if any (lN = 0)uniform float uWaveAmp; uniform vec4 uBoat; uniform float uBoatScale; uniform float fogDensity; uniform float uTime; uniform vec3 ambGround;
 uniform vec4 uTrack[96]; uniform float uTrackS[96]; uniform float uWakeClock; uniform vec4 uWakeBoat; uniform float uWakeV;
 uniform vec4 uChunk[12];
 // One Kelvin wave system at (x behind, y beside) for direction tan t: slope (d/dx, d/dy) of a
@@ -19,6 +18,7 @@ vec2 rot(vec2 v, float a){ float c = cos(a), s = sin(a); return vec2(c * v.x - s
 // of water per pixel); beyond that it can only alias into moire rings. The slope it would have
 // added is collected in 'lost' and turned into a broader sun glint instead.
 // m scales the wave's amplitude (wind patches); pw is p with the crests bent so they don't run in straight lines.
+// A wave that has fully faded is skipped (most of them, far out), costing only the comparison.
 #define WAVE(len, amp, ang, m) { float k = 6.2831853 / len; vec2 dd = rot(uWindDir, ang); float ph = dot(dd, pw) * k - uTime * sqrt(9.81 * k); float f = 1.0 - smoothstep(len * 0.1, len * 0.3, fp); g += dd * (amp * m * cos(ph) * f); lost += amp * m * (1.0 - f); }
 vec3 waterNormal(vec2 p, float fp, out float rough){
   vec2 g = vec2(0.0); float lost = 0.0;
@@ -33,6 +33,9 @@ vec3 waterNormal(vec2 p, float fp, out float rough){
     g += vec2(vnoise(q + vec2(e, 0.0)) - c0, vnoise(q + vec2(0.0, e)) - c0) / e * 0.035 * fr;
   }
   g *= uWaveAmp;
+  #ifdef LAKE
+  g *= 0.5; // small sheltered lakes: half the sea's waves
+  #endif
   rough = min(lost / 0.47, 1.0) * min(uWaveAmp, 1.0); // 0.47 = sum of the wave amplitudes
   return normalize(vec3(-g.x, 1.0, -g.y));
 }
@@ -45,6 +48,7 @@ void main(){
   // metres back along it, y to the side), then add the two Kelvin wave systems there.
   float wakeFoam = 0.0;
   vec2 fromBoat = vW.xz - uWakeBoat.xy;
+  #ifndef LAKE
   if (dot(fromBoat, fromBoat) < 400.0 * 400.0) {
     float best = 1e12, wx = 0.0, wy = 0.0, wAge = 0.0, wStr = 0.0, trail = 0.0;
     vec2 wFwd = vec2(0.0, -1.0);
@@ -116,14 +120,26 @@ void main(){
     float crestFoam = smoothstep(0.07, 0.12, steep) * smoothstep(0.6, 0.85, streak) * exp(-length(fromBoat) / 50.0);
     wakeFoam = min(trailFoam * 0.75 + crestFoam * 0.5, 0.8);
   }
+  #endif
+  #ifdef LAKE
+  float depth = 6.0; // no lake bathymetry: a uniform dark body, no shore foam
+  #else
   vec2 tuv = ((vW.xz - hB.xy) / hB.z + 0.5) / hN;
   float bed = -300.0;
   if (tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) bed = texture2D(tHeight, tuv).r;
   vec2 luv = ((vW.xz - lB.xy) / lB.z + 0.5) / max(lN, vec2(1.0));
   if (lN.x > 0.0 && luv.x > 0.0 && luv.y > 0.0 && luv.x < 1.0 && luv.y < 1.0) bed = texture2D(tHeightL, luv).r;
   float depth = max(-bed, 0.0);
+  #endif
+  // Reflection: the planar pass, or (Low preset, and lakes, which sit above the mirror plane) the
+  // sky's colour in the reflected direction, which costs no extra pass.
+  #if defined(LAKE) || defined(SKY_REFL)
+  vec3 Rs = reflect(-V, n);
+  vec3 refl = skyColor(normalize(vec3(Rs.x, max(Rs.y, 0.02), Rs.z)));
+  #else
   vec2 ruv = vM.xy / vM.w + n.xz * (0.05 / (1.0 + dist * 0.0035));
   vec3 refl = texture2D(tRefl, ruv).rgb;
+  #endif
   #ifdef TONE_MAPPING
   // three.js r150, which the look was tuned on, tone-mapped every pass, so the reflection came
   // out of its pass already tone-mapped. Newer three only tone-maps on screen; this keeps the look.

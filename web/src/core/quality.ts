@@ -21,7 +21,7 @@ export interface QualitySettings {
    */
   renderScale: number;
   aa: AntiAlias;
-  /** Reflection target size as a share of the canvas. */
+  /** Reflection target size as a share of the canvas; 0 = no planar pass, the water reflects the sky colour. */
   reflScale: number;
   /** Draw the trees into the water reflection. */
   reflTrees: boolean;
@@ -32,7 +32,7 @@ export interface QualitySettings {
 }
 
 export const PRESETS: Record<QualityName, QualitySettings> = {
-  low: { targetFps: 60, renderScale: 0.67, aa: 'none', reflScale: 0.25, reflTrees: false, farTrees: false, detail: false },
+  low: { targetFps: 60, renderScale: 0.67, aa: 'none', reflScale: 0, reflTrees: false, farTrees: false, detail: false },
   balanced: { targetFps: 60, renderScale: 0.85, aa: 'smaa', reflScale: 0.35, reflTrees: false, farTrees: true, detail: true },
   high: { targetFps: 30, renderScale: 1.0, aa: 'msaa', reflScale: 0.5, reflTrees: true, farTrees: true, detail: true }
 };

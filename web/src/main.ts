@@ -20,12 +20,13 @@ import { makeLabels, updateLabels } from './world/labels';
 import { dome, updateSky } from './world/sky';
 import { buildTerrain } from './world/terrain';
 import { applyForestQuality, buildForest, setTreeStyle, updateForest } from './world/trees';
-import { renderReflection, setSeabed, water } from './world/water';
+import { buildLakes, renderReflection, setSeabed, water } from './world/water';
 
 function build() {
   const meta = geo.meta!;
   const summary = buildTerrain();
   setSeabed();
+  buildLakes();
   buildForest();
   setTreeStyle(params.get('trees') || 'mixed'); // bakes in the background; trees appear when ready
   makeLabels(meta.labels);
