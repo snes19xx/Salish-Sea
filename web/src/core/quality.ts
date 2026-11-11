@@ -29,12 +29,14 @@ export interface QualitySettings {
   farTrees: boolean;
   /** Terrain crowns and fine relief. */
   detail: boolean;
+  /** Sun shadow map size for the boat, in pixels; 0 = no shadows. */
+  shadowSize: number;
 }
 
 export const PRESETS: Record<QualityName, QualitySettings> = {
-  low: { targetFps: 60, renderScale: 0.67, aa: 'none', reflScale: 0, reflTrees: false, farTrees: false, detail: false },
-  balanced: { targetFps: 60, renderScale: 0.85, aa: 'smaa', reflScale: 0.35, reflTrees: false, farTrees: true, detail: true },
-  high: { targetFps: 30, renderScale: 1.0, aa: 'msaa', reflScale: 0.5, reflTrees: true, farTrees: true, detail: true }
+  low: { targetFps: 60, renderScale: 0.67, aa: 'none', reflScale: 0, reflTrees: false, farTrees: false, detail: false, shadowSize: 0 },
+  balanced: { targetFps: 60, renderScale: 0.85, aa: 'smaa', reflScale: 0.35, reflTrees: false, farTrees: true, detail: true, shadowSize: 1024 },
+  high: { targetFps: 30, renderScale: 1.0, aa: 'msaa', reflScale: 0.5, reflTrees: true, farTrees: true, detail: true, shadowSize: 2048 }
 };
 
 /** The GPU's name, from a throwaway WebGL 2 context. */

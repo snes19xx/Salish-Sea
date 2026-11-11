@@ -57,6 +57,7 @@ export async function toggleGui() {
   q.add(quality, 'reflTrees').name('Trees in reflection').onChange(applyQuality);
   q.add(quality, 'farTrees').name('Far tree ring').onChange(applyQuality);
   q.add(quality, 'detail').name('Terrain detail').onChange(applyQuality);
+  q.add(quality, 'shadowSize', { Off: 0, '1024': 1024, '2048': 2048 }).name('Boat shadows').onChange(applyQuality);
   // MSAA only applies if the page loaded with it; otherwise SMAA stands in (see quality.ts).
   q.add(quality, 'aa', ['none', 'smaa', 'msaa']).name('Antialiasing').listen();
   q.add({ get inUse() { return antiAlias(); } }, 'inUse').name('Antialiasing in use').disable().listen();

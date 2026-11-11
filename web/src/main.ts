@@ -1,6 +1,6 @@
 // Sunshine Coast 3D: start-up and the frame loop.
 import './style.css';
-import { loadBoat } from './boat/boat';
+import { loadBoat, updateBoatShadow } from './boat/boat';
 import { updateChase } from './boat/chase';
 import { sail, setWind, updateSail } from './boat/sailing';
 import { updateWake } from './boat/wake';
@@ -54,6 +54,7 @@ function frame(now: number) {
   updateWake(dt);
   beginFrameTiming();
   renderReflection();
+  updateBoatShadow(); // after the reflection, so its clipping plane doesn't cut the shadow map
   renderMain();
   endFrameTiming(now);
   updateLabels();

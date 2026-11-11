@@ -4,7 +4,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { scene } from '../core/renderer';
+import { onQualityChange, quality } from '../core/quality';
+import { U, renderer, scene, sunLight } from '../core/renderer';
 import { waterU } from '../world/water';
 
 // Drawn at two-thirds of its built size (about 6 m long, mast about 9 m): at full size it
@@ -50,11 +51,10 @@ function mergeBoat(model: THREE.Object3D, movers: THREE.Object3D[]) {
     const g = mesh.geometry.clone();
     g.applyMatrix4(toParent.copy(parent.matrixWorld).invert().multiply(mesh.matrixWorld));
     const n = g.attributes.position.count, col = new Float32Array(n * 3), rm = new Float32Array(n * 2);
-    // No environment map in this scene, so fully metallic spars would render nearly black.
-    const metal = mat.metalness > 0.3 ? 0.25 : mat.metalness;
+    // Metal as modelled: the sky's environment map (world/sky.ts) gives the spars something to reflect.
     for (let i = 0; i < n; i++) {
       col[i * 3] = mat.color.r; col[i * 3 + 1] = mat.color.g; col[i * 3 + 2] = mat.color.b;
-      rm[i * 2] = mat.roughness; rm[i * 2 + 1] = metal;
+      rm[i * 2] = mat.roughness; rm[i * 2 + 1] = mat.metalness;
     }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.setAttribute('rm', new THREE.BufferAttribute(rm, 2));
@@ -68,9 +68,41 @@ function mergeBoat(model: THREE.Object3D, movers: THREE.Object3D[]) {
     if (!mats.has(side)) mats.set(side, boatMaterial(side));
     const merged = mergeGeometries(geoms);
     if (!merged) throw new Error('could not merge the boat pieces');
-    parent.add(new THREE.Mesh(merged, mats.get(side)));
+    const mesh = new THREE.Mesh(merged, mats.get(side));
+    mesh.castShadow = mesh.receiveShadow = true; // the sails shade the deck and the hull
+    parent.add(mesh);
   }
   return groups.size;
+}
+
+// Sun shadows on the boat only (Balanced and High): a small shadow box that follows the boat. The
+// terrain, trees and water use their own shaders and neither cast nor receive these shadows.
+const SHADOW_BOX = 7; // metres either side of the boat, in the light's view
+sunLight.shadow.camera.left = sunLight.shadow.camera.bottom = -SHADOW_BOX;
+sunLight.shadow.camera.right = sunLight.shadow.camera.top = SHADOW_BOX;
+sunLight.shadow.camera.near = 1; sunLight.shadow.camera.far = 80;
+sunLight.shadow.bias = -0.0004; sunLight.shadow.normalBias = 0.03;
+function applyShadowQuality() {
+  const size = quality.shadowSize;
+  renderer.shadowMap.enabled = size > 0;
+  sunLight.castShadow = size > 0;
+  if (size > 0 && sunLight.shadow.mapSize.x !== size) {
+    sunLight.shadow.mapSize.set(size, size);
+    sunLight.shadow.map?.dispose();
+    sunLight.shadow.map = null; // remade at the new size on the next render
+  }
+}
+renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.shadowMap.autoUpdate = false; // updated once a frame (updateBoatShadow), not in every pass
+applyShadowQuality();
+onQualityChange(applyShadowQuality);
+/** Aim the sun's shadow box at the boat; call once a frame before the main pass. */
+export function updateBoatShadow() {
+  if (!sunLight.castShadow) return;
+  sunLight.target.position.copy(boat.position);
+  sunLight.position.copy(boat.position).addScaledVector(U.sunDir.value, 40);
+  sunLight.target.updateMatrixWorld();
+  renderer.shadowMap.needsUpdate = true;
 }
 
 export function loadBoat() {
