@@ -31,12 +31,14 @@ export interface QualitySettings {
   detail: boolean;
   /** Sun shadow map size for the boat, in pixels; 0 = no shadows. */
   shadowSize: number;
+  /** A soft glow around the sun and bright water glints (half-resolution bloom). */
+  bloom: boolean;
 }
 
 export const PRESETS: Record<QualityName, QualitySettings> = {
-  low: { targetFps: 60, renderScale: 0.67, aa: 'none', reflScale: 0, reflTrees: false, farTrees: false, detail: false, shadowSize: 0 },
-  balanced: { targetFps: 60, renderScale: 0.85, aa: 'smaa', reflScale: 0.35, reflTrees: false, farTrees: true, detail: true, shadowSize: 1024 },
-  high: { targetFps: 30, renderScale: 1.0, aa: 'msaa', reflScale: 0.5, reflTrees: true, farTrees: true, detail: true, shadowSize: 2048 }
+  low: { targetFps: 60, renderScale: 0.67, aa: 'none', reflScale: 0, reflTrees: false, farTrees: false, detail: false, shadowSize: 0, bloom: false },
+  balanced: { targetFps: 60, renderScale: 0.85, aa: 'smaa', reflScale: 0.35, reflTrees: false, farTrees: true, detail: true, shadowSize: 1024, bloom: false },
+  high: { targetFps: 30, renderScale: 1.0, aa: 'msaa', reflScale: 0.5, reflTrees: true, farTrees: true, detail: true, shadowSize: 2048, bloom: true }
 };
 
 /** The GPU's name, from a throwaway WebGL 2 context. */

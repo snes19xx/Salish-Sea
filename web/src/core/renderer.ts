@@ -2,6 +2,7 @@
 // depth split that draws each view.
 import * as THREE from 'three';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { applyBloom } from './bloom';
 import { quality, type AntiAlias } from './quality';
 import { $, params } from './util';
 
@@ -120,11 +121,11 @@ function smaaTarget() {
     pass.clear = true; // its edge pass skips flat pixels, and autoClear is off
     pass.renderToScreen = true;
     smaa = { target, pass };
-    sizeSmaa();
+    sizePostTargets();
   }
   return smaa;
 }
-function sizeSmaa() {
+function sizePostTargets() {
   if (!smaa) return;
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
   smaa.target.setSize(size.x, size.y);
@@ -132,10 +133,13 @@ function sizeSmaa() {
 }
 
 export function renderMain() {
-  if (antiAlias() !== 'smaa') { renderSplit(camera, null); return; }
-  const { target, pass } = smaaTarget();
-  renderSplit(camera, target);
-  pass.render(renderer, target, target, 0, false);
+  if (antiAlias() !== 'smaa') renderSplit(camera, null);
+  else {
+    const { target, pass } = smaaTarget();
+    renderSplit(camera, target);
+    pass.render(renderer, target, target, 0, false);
+  }
+  if (quality.bloom) applyBloom(renderer); // on the finished frame (core/bloom.ts)
 }
 
 /** Called with the stage size in CSS pixels and the pixel ratio whenever either changes. */
@@ -144,7 +148,7 @@ export function resize() {
   const w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
   renderer.setPixelRatio(pixelRatio());
   renderer.setSize(w, h);
-  sizeSmaa();
+  sizePostTargets();
   camera.aspect = mirrorCam.aspect = camNear.aspect = camFar.aspect = w / h;
   for (const c of [camera, mirrorCam, camNear, camFar]) c.updateProjectionMatrix();
   for (const fn of resizeHooks) fn(w, h, renderer.getPixelRatio());

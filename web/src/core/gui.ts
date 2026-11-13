@@ -12,6 +12,7 @@ import { LIDAR_ON } from '../world/data';
 import { PEBBLE_TEXTURES, ROCK_TEXTURES, applyGroundLook, groundLook } from '../world/terrain';
 import { forestTuning } from '../world/trees';
 import { GPU, PRESETS, applyQuality, quality, setQuality, type QualityName } from './quality';
+import { bloomTuning } from './bloom';
 import { dynRes, resetDynRes } from './dynres';
 import { antiAlias, currentRenderScale, renderer } from './renderer';
 import { state } from './state';
@@ -58,6 +59,9 @@ export async function toggleGui() {
   q.add(quality, 'farTrees').name('Far tree ring').onChange(applyQuality);
   q.add(quality, 'detail').name('Terrain detail').onChange(applyQuality);
   q.add(quality, 'shadowSize', { Off: 0, '1024': 1024, '2048': 2048 }).name('Boat shadows').onChange(applyQuality);
+  q.add(quality, 'bloom').name('Bloom');
+  q.add(bloomTuning, 'threshold', 0.5, 1, 0.01).name('Bloom threshold');
+  q.add(bloomTuning, 'strength', 0, 1.5, 0.05).name('Bloom strength');
   // MSAA only applies if the page loaded with it; otherwise SMAA stands in (see quality.ts).
   q.add(quality, 'aa', ['none', 'smaa', 'msaa']).name('Antialiasing').listen();
   q.add({ get inUse() { return antiAlias(); } }, 'inUse').name('Antialiasing in use').disable().listen();
