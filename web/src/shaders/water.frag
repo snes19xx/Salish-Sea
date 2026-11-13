@@ -1,7 +1,8 @@
 // Water: waves, planar reflection, depth colour, shore foam and the boat's Kelvin wake.
 // Preceded by sky_common.glsl and noise.glsl.
 uniform sampler2D tRefl; uniform sampler2D tHeight; uniform vec4 hB; uniform vec2 hN; uniform vec2 uWindDir;
-uniform sampler2D tHeightL; uniform vec4 lB; uniform vec2 lN; // the 2 m lidar window, if any (lN = 0)uniform float uWaveAmp; uniform vec4 uBoat; uniform float uBoatScale; uniform float fogDensity; uniform float uTime; uniform vec3 ambGround;
+uniform sampler2D tHeightL; uniform vec4 lB; uniform vec2 lN; // the 2 m lidar window, if any (lN = 0)
+uniform float uWaveAmp; uniform vec4 uBoat; uniform float uBoatScale; uniform float fogDensity; uniform float uTime; uniform vec3 ambGround;
 uniform vec4 uTrack[96]; uniform float uTrackS[96]; uniform float uWakeClock; uniform vec4 uWakeBoat; uniform float uWakeV;
 uniform vec4 uChunk[12];
 // One Kelvin wave system at (x behind, y beside) for direction tan t: slope (d/dx, d/dy) of a
@@ -18,7 +19,6 @@ vec2 rot(vec2 v, float a){ float c = cos(a), s = sin(a); return vec2(c * v.x - s
 // of water per pixel); beyond that it can only alias into moire rings. The slope it would have
 // added is collected in 'lost' and turned into a broader sun glint instead.
 // m scales the wave's amplitude (wind patches); pw is p with the crests bent so they don't run in straight lines.
-// A wave that has fully faded is skipped (most of them, far out), costing only the comparison.
 #define WAVE(len, amp, ang, m) { float k = 6.2831853 / len; vec2 dd = rot(uWindDir, ang); float ph = dot(dd, pw) * k - uTime * sqrt(9.81 * k); float f = 1.0 - smoothstep(len * 0.1, len * 0.3, fp); g += dd * (amp * m * cos(ph) * f); lost += amp * m * (1.0 - f); }
 vec3 waterNormal(vec2 p, float fp, out float rough){
   vec2 g = vec2(0.0); float lost = 0.0;

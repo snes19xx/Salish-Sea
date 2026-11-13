@@ -1,6 +1,7 @@
 // The sea: wave normals, planar reflection, depth colour, shore foam and the boat's wake (the
 // wake's track lives in boat/wake.ts and feeds the uniforms here).
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { onQualityChange, quality } from '../core/quality';
 import { U, camera, mirrorCam, renderSplit, renderer, resizeHooks, scene } from '../core/renderer';
 import { geo } from './data';
@@ -89,22 +90,26 @@ export function setSeabed() {
  * sit 0.3 m above the surface height so the DEM, flattened there, stays under them.
  */
 export function buildLakes() {
-  const lakeMat = waterMat.clone();
-  lakeMat.uniforms = waterMat.uniforms; // clone() copies the uniforms; share the sea's so time, sun and waves stay in step
-  lakeMat.defines = { LAKE: '' };
+  // The sea's uniforms, shared (not copied), so time, sun and waves stay in step.
+  const lakeMat = new THREE.ShaderMaterial({
+    uniforms: waterMat.uniforms, defines: { LAKE: '' },
+    vertexShader: waterVert, fragmentShader: SKY_COMMON + NOISE + waterFrag
+  });
+  const geoms: THREE.BufferGeometry[] = [];
   for (const lake of geo.meta?.lakes ?? []) {
     for (const ring of lake.rings) {
       if (ring.length < 4) continue;
       // Shape in (x, -z) and rotated -90 degrees about x, so it lies at world (x, z) facing up.
       const shape = new THREE.Shape(ring.map(([x, z]) => new THREE.Vector2(x, -z)));
-      const geom = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2);
-      geom.translate(0, lake.surface + 0.3, 0);
-      const mesh = new THREE.Mesh(geom, lakeMat);
-      mesh.renderOrder = 4;
-      mesh.name = lake.name ?? 'lake';
-      scene.add(mesh);
+      geoms.push(new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2).translate(0, lake.surface + 0.3, 0));
     }
   }
+  if (!geoms.length) return;
+  // All lakes in one mesh: one draw call per pass instead of one per lake.
+  const lakes = new THREE.Mesh(mergeGeometries(geoms), lakeMat);
+  lakes.renderOrder = 4;
+  lakes.name = 'lakes';
+  scene.add(lakes);
 }
 
 /** Objects left out of the reflection on presets without reflected trees (the tree rings). */
