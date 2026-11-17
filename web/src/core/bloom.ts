@@ -6,7 +6,8 @@
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
-export const bloomTuning = { threshold: 0.8, strength: 0.25 };
+// Threshold above sunlit white sails (about 0.85-0.9 on screen), so only the sun and glints glow.
+export const bloomTuning = { threshold: 0.92, strength: 0.3 };
 
 const VERT = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
 // Keep what is close to white (soft knee), averaging 4 texels as it halves the size.
