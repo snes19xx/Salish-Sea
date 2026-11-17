@@ -4,6 +4,8 @@ Writes to pilot/data/<area>/:
     pilot_height.bin    Float32 little-endian, row-major, row 0 = north (detail grid)
     pilot_backdrop.bin  same format, low-detail backdrop grid
     pilot_mask.bin      Uint8 per detail cell: 1 = built-up (no trees)
+    pilot_height.u16, pilot_backdrop.u16   the same grids as Uint16 for the web app (offset and
+                        scale in pilot_height.json under "u16")
     pilot_height.json   grids, world origin, labels, flyover path, boat start, wind, lakes
     pilot_map.json      minimap vectors: land, lakes, roads, ferries and place names
 
@@ -111,6 +113,16 @@ def grid_meta(transform, rows, cols, e0, n0):
             "minZ": round(-(transform.f - res / 2 - n0), 2)}
 
 
+def write_u16(a, path):
+    """Write heights as Uint16 little-endian (half the download of Float32): height = offset +
+    value * scale, spread over the grid's own range (a few cm per step for 2.7 km of relief).
+    Returns the offset and scale for the JSON."""
+    lo, hi = float(a.min()), float(a.max())
+    scale = max(hi - lo, 1e-3) / 65535
+    path.write_bytes(np.round((a - lo) / scale).astype("<u2").tobytes())
+    return {"offset": lo, "scale": scale}
+
+
 def find_place(features, name):
     hits = [f for f in features if f["properties"]["name"] == name]
     if not hits:
@@ -138,6 +150,9 @@ def main():
     (area.out / "pilot_height.bin").write_bytes(np.ascontiguousarray(h).tobytes())
     (area.out / "pilot_backdrop.bin").write_bytes(np.ascontiguousarray(b).tobytes())
     (area.out / "pilot_mask.bin").write_bytes(np.ascontiguousarray(towns).tobytes())
+    # Half-size copies for the web app (the pilot keeps reading the Float32 files).
+    u16 = {"height": write_u16(h, area.out / "pilot_height.u16"),
+           "backdrop": write_u16(b, area.out / "pilot_backdrop.u16")}
 
     rows, cols, res = h.shape[0], h.shape[1], detail["spacing"]
 
@@ -188,6 +203,7 @@ def main():
         **detail,
         "backdrop": back,
         "format": "Float32 little-endian, row-major, row 0 = north (min z); mask Uint8, 1 = built-up",
+        "u16": u16,  # pilot_height.u16 and pilot_backdrop.u16: height = offset + value * scale
         "heights": "metres above CGVD2013; sea level = 0",
         "crs": "EPSG:26910",
         "origin": {"lon": area.origin[0], "lat": area.origin[1],

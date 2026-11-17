@@ -17,7 +17,8 @@ PORT = 8000
 # map .js to text/plain, and browsers refuse to run module scripts served that way.
 TYPES = {
     '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
-    '.bin': 'application/octet-stream', '.glb': 'model/gltf-binary', '.png': 'image/png',
+    '.bin': 'application/octet-stream', '.u16': 'application/octet-stream', '.glb': 'model/gltf-binary',
+    '.png': 'image/png', '.jpg': 'image/jpeg',
     '.svg': 'image/svg+xml', '.woff2': 'font/woff2'
 }
 

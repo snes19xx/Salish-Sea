@@ -16,6 +16,7 @@ export interface AreaMeta {
   boat: { x: number; z: number; hdg: number };
   wind: { from: number; kn: number };
   lakes?: { name: string | null; surface: number; rings: [number, number][][] }[];
+  u16?: { height: { offset: number; scale: number }; backdrop: { offset: number; scale: number } };
 }
 
 export const AREA = (params.get('area') || 'howe').replace(/[^a-z0-9_-]/gi, '');
@@ -66,17 +67,24 @@ export async function loadData() {
     if (!r.ok) throw new Error(`${DATA}${name}: HTTP ${r.status}`);
     return r;
   });
+  // Everything is requested at once (the lidar window too), so a slow connection waits once.
+  type LidarMeta = { width: number; height: number; spacing: number; minX: number; minZ: number; u16: U16 };
+  const lidar = LIDAR_ON ? Promise.all([
+    get('pilot_lidar.json').then(r => r.json() as Promise<LidarMeta>),
+    get('pilot_lidar.u16').then(r => r.arrayBuffer())
+  ]) : null;
   const [meta, hBuf, bBuf, mBuf] = await Promise.all([
     get('pilot_height.json').then(r => r.json() as Promise<AreaMeta>),
-    get('pilot_height.bin').then(r => r.arrayBuffer()),
-    get('pilot_backdrop.bin').then(r => r.arrayBuffer()),
+    get('pilot_height.u16').then(r => r.arrayBuffer()),
+    get('pilot_backdrop.u16').then(r => r.arrayBuffer()),
     get('pilot_mask.bin').then(r => r.arrayBuffer())
   ]);
+  if (!meta.u16) throw new Error(`${DATA}pilot_height.json has no "u16" entry: re-run tools/export_pilot.py`);
   const NX = meta.width, NZ = meta.height, DX = meta.spacing;
-  const H = new Float32Array(hBuf), MASK = new Uint8Array(mBuf);
+  const H = fromU16(hBuf, meta.u16.height), MASK = new Uint8Array(mBuf);
   if (H.length !== NX * NZ || MASK.length !== NX * NZ) throw new Error(`detail grid size mismatch (${H.length}, ${MASK.length}, expected ${NX * NZ})`);
   const b = meta.backdrop;
-  const BG: Grid = { nx: b.width, nz: b.height, dx: b.spacing, minX: b.minX, minZ: b.minZ, h: new Float32Array(bBuf) };
+  const BG: Grid = { nx: b.width, nz: b.height, dx: b.spacing, minX: b.minX, minZ: b.minZ, h: fromU16(bBuf, meta.u16.backdrop) };
   if (BG.h.length !== BG.nx * BG.nz) throw new Error('backdrop grid size mismatch');
   // Sink the backdrop's outer edge into the sea so the world has no walls.
   for (let r = 0; r < BG.nz; r++) for (let c = 0; c < BG.nx; c++) {
@@ -95,11 +103,16 @@ export async function loadData() {
   geo.detail = { nx: NX, nz: NZ, dx: DX, minX: meta.minX, minZ: meta.minZ, h: H };
   geo.maxX = meta.minX + (NX - 1) * DX; geo.maxZ = meta.minZ + (NZ - 1) * DX;
   geo.seabed = seabed; geo.mask = MASK; geo.backdrop = BG; geo.meta = meta;
-  if (LIDAR_ON) {
-    const [lm, lb] = await Promise.all([
-      get('pilot_lidar.json').then(r => r.json() as Promise<{ width: number; height: number; spacing: number; minX: number; minZ: number }>),
-      get('pilot_lidar.bin').then(r => r.arrayBuffer())
-    ]);
-    geo.lidar = { nx: lm.width, nz: lm.height, dx: lm.spacing, minX: lm.minX, minZ: lm.minZ, h: new Float32Array(lb) };
+  if (lidar) {
+    const [lm, lb] = await lidar;
+    geo.lidar = { nx: lm.width, nz: lm.height, dx: lm.spacing, minX: lm.minX, minZ: lm.minZ, h: fromU16(lb, lm.u16) };
   }
+}
+
+// Heights are downloaded as Uint16 (half the size of Float32): height = offset + value * scale.
+type U16 = { offset: number; scale: number };
+function fromU16(buf: ArrayBuffer, { offset, scale }: U16) {
+  const u = new Uint16Array(buf), h = new Float32Array(u.length);
+  for (let i = 0; i < u.length; i++) h[i] = offset + u[i] * scale;
+  return h;
 }

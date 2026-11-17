@@ -1,5 +1,6 @@
 """Cut a 2 m lidar window around Horseshoe Bay (a first test of lidar) for the web app to draw over the
-30 m ground. Writes pilot/data/howe/pilot_lidar.bin (Float32, row 0 = north) and pilot_lidar.json.
+30 m ground. Writes pilot/data/howe/pilot_lidar.u16 (Uint16, row 0 = north; offset and scale in
+pilot_lidar.json, height = offset + value * scale) and pilot_lidar.json.
 
 The window is aligned to the 30 m grid, so along its edges the 30 m ground is a straight line
 between its samples; the lidar is blended into that over the last EDGE metres, so the two meet
@@ -21,6 +22,7 @@ from rasterio.warp import reproject
 from pyproj import Transformer
 from shapely.geometry import box
 
+from export_pilot import write_u16
 from merge_dem import coastline_land
 from pilot_area import AREAS, ROOT, UTM
 
@@ -77,7 +79,8 @@ h = (base + (h - base) * w).astype("<f4")
 print(f"Below 0 m with lidar data: {(have & (dst < 0)).mean():.1%} of window; "
       f"blended range {h.min():.1f} to {h.max():.1f} m")
 
-h.tofile(out / "pilot_lidar.bin")
+u16 = write_u16(h, out / "pilot_lidar.u16")  # half the download of Float32, about 1 cm steps
 (out / "pilot_lidar.json").write_text(json.dumps(
-    {"width": M, "height": M, "spacing": RES, "minX": x0, "minZ": z0, "source": "NRCan HRDEM 2 m mosaic (2_3)"}))
-print(f"Wrote pilot_lidar.bin ({h.nbytes / 1e6:.1f} MB): x {x0:.0f} to {x0 + size:.0f}, z {z0:.0f} to {z0 + size:.0f}")
+    {"width": M, "height": M, "spacing": RES, "minX": x0, "minZ": z0, "u16": u16,
+     "source": "NRCan HRDEM 2 m mosaic (2_3)"}))
+print(f"Wrote pilot_lidar.u16 ({h.size * 2 / 1e6:.1f} MB): x {x0:.0f} to {x0 + size:.0f}, z {z0:.0f} to {z0 + size:.0f}")
