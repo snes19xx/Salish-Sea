@@ -1,6 +1,7 @@
 // Quality presets. Every feature with a cost reads its settings
 // from `quality`; switching preset updates it and tells the listeners. High is the pilot's look.
-// The default comes from the GPU's name: Intel and other integrated or mobile GPUs get Balanced.
+// The default comes from the GPU's name: Intel Lunar Lake and Arc get High (8 ms a frame on the
+// laptop), older Intel and other integrated or mobile GPUs get Balanced.
 // ?quality=low|balanced|high overrides it, ?aa= the antialiasing.
 import { params } from './util';
 
@@ -16,8 +17,8 @@ export interface QualitySettings {
   /** Frame rate to hold; dynamic resolution lowers the render scale when frames run longer. */
   targetFps: number;
   /**
-   * Canvas pixels per CSS pixel, the most dynamic resolution will use. Rendering at full retina
-   * resolution costs far more than it shows.
+   * Share of the pilot's pixel ratio (the screen's, capped at 1.5), the most dynamic resolution
+   * will use. Rendering at full retina resolution costs far more than it shows.
    */
   renderScale: number;
   aa: AntiAlias;
@@ -54,7 +55,7 @@ export function gpuName(): string {
 function defaultPreset(gpu: string): QualityName {
   const asked = params.get('quality');
   if (asked && asked in PRESETS) return asked as QualityName;
-  return /apple|nvidia|geforce|quadro|radeon (rx|pro)/i.test(gpu) ? 'high' : 'balanced';
+  return /apple|nvidia|geforce|quadro|radeon (rx|pro)|\(lnl\)|intel.*\barc\b/i.test(gpu) ? 'high' : 'balanced';
 }
 
 export const GPU = gpuName();

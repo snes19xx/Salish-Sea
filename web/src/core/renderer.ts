@@ -30,10 +30,14 @@ export function setRenderScale(s: number, doResize = true) {
   if (doResize) resize();
 }
 
-/** Canvas pixels per CSS pixel: the render scale, or ?pr= (capped at the screen's). */
+/**
+ * Canvas pixels per CSS pixel: the render scale times the pilot's ratio (the screen's, capped at
+ * 1.5), or ?pr= (capped at the screen's).
+ */
 export function pixelRatio() {
+  const dpr = window.devicePixelRatio || 1;
   const pr = parseFloat(params.get('pr') || '');
-  return pr > 0 ? Math.min(window.devicePixelRatio || 1, pr) : renderScale;
+  return pr > 0 ? Math.min(dpr, pr) : renderScale * Math.min(dpr, 1.5);
 }
 renderer.setPixelRatio(pixelRatio());
 renderer.setSize(stage.clientWidth, stage.clientHeight);
