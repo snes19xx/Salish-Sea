@@ -131,7 +131,7 @@ AREAS = {
     "sechelt": Area(
         name="sechelt",
         title="Sechelt",
-        coord="49.4742° N  123.7545° W · Sunshine Coast, BC",
+        coord="49.4742° N  123.7545° W · Gibsons to Halfmoon Bay",
         note="Source: NRCan MRDEM 30 m elevation, CHS NONNA bathymetry "
              "(not for navigation), OpenStreetMap coastline.",
         bounds=(-123.97, 49.35, -123.42, 49.62),

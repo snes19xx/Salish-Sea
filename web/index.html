@@ -15,10 +15,17 @@
     <h1 id="b-title">Howe Sound</h1>
     <p class="sub" id="b-sub">Horseshoe Bay to Gibsons on real elevation and seafloor data</p>
   </div>
-  <nav class="modes" aria-label="View">
-    <button id="mode-fly" type="button" aria-pressed="true">Flyover</button>
-    <button id="mode-sail" type="button" aria-pressed="false">Sail</button>
-  </nav>
+  <div class="navs">
+    <!-- Each map is its own page load (?area=); hrefs keep the other query options. -->
+    <nav class="modes areas" id="areas" aria-label="Map">
+      <a href="?" data-area="howe" title="Horseshoe Bay to Gibsons, Howe Sound">Howe Sound</a>
+      <a href="?area=sechelt" data-area="sechelt" title="Gibsons to Halfmoon Bay on the Strait of Georgia, and the lower Sechelt Inlet">Sechelt</a>
+    </nav>
+    <nav class="modes" aria-label="View">
+      <button id="mode-fly" type="button" aria-pressed="true">Flyover</button>
+      <button id="mode-sail" type="button" aria-pressed="false">Sail</button>
+    </nav>
+  </div>
 </header>
 
 <main class="stage" id="stage">

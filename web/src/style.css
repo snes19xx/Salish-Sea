@@ -35,12 +35,15 @@ button { font: inherit; color: inherit; }
 .mast h1 { font-family: var(--display); font-weight: 400; font-size: 1.3rem; line-height: 1.1; letter-spacing: -0.005em; white-space: nowrap; }
 .mast .sub { color: var(--ink2); font-size: 0.76rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .modes { display: flex; gap: 1rem; align-items: baseline; }
-.modes button {
+.navs { display: flex; gap: 1rem; align-items: baseline; }
+.modes button, .modes a {
   background: none; border: 0; padding: 0 0 2px; cursor: pointer; font-size: 0.82rem; color: var(--ink3);
   border-bottom: 1px solid transparent; transition: color 0.14s, border-color 0.14s;
+  text-decoration: none; white-space: nowrap;
 }
-.modes button:hover { color: var(--ink2); }
-.modes button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.modes button:hover, .modes a:hover { color: var(--ink2); }
+.modes button[aria-pressed="true"], .modes a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+.areas { padding-right: 1rem; border-right: 1px solid var(--rule); }
 
 /* ---- scene: everything under the masthead ---- */
 .stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: #0d1114; }

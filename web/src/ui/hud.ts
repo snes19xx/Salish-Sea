@@ -5,7 +5,7 @@ import { look } from '../core/input';
 import { stage } from '../core/renderer';
 import { state, view, type Mode } from '../core/state';
 import { $, angDiff, compass } from '../core/util';
-import { sampleH, type AreaMeta } from '../world/data';
+import { AREA, sampleH, type AreaMeta } from '../world/data';
 import { setAttr, setText } from './dom';
 import { updateMap } from './map';
 
@@ -17,7 +17,7 @@ export function setMode(m: Mode) {
   $('#mode-sail').setAttribute('aria-pressed', String(m === 'sail'));
   $('#inst').hidden = m !== 'sail';
   $('#rudder').hidden = !(m === 'sail' && coarse);
-  $('#keys').hidden = m !== 'sail'; // only the sailing keys need explaining
+  $('#keys').hidden = m !== 'sail'; // only sailing keys need explaining
   stage.classList.toggle('sailing', m === 'sail');
   look.yaw = 0; look.pitch = 0;
   if (m === 'sail') look.dist = chaseView.dist;
@@ -25,6 +25,18 @@ export function setMode(m: Mode) {
 }
 $('#mode-fly').addEventListener('click', () => setMode('fly'));
 $('#mode-sail').addEventListener('click', () => setMode('sail'));
+
+// Map links: mark the loaded area, name it on the loading screen, carry the other options along.
+for (const a of document.querySelectorAll<HTMLAnchorElement>('#areas a')) {
+  const area = a.dataset.area!;
+  const q = new URLSearchParams(location.search);
+  if (area === 'howe') q.delete('area'); else q.set('area', area);
+  a.href = `?${String(q).replace(/=(?=&|$)/g, '')}`; // ?gui, not ?gui=
+  if (area === AREA) {
+    a.setAttribute('aria-current', 'page');
+    $('#loader h2').textContent = a.textContent;
+  }
+}
 
 export function toggleMotor() {
   sail.motor = !sail.motor;
@@ -51,7 +63,7 @@ export function updateInstruments() {
 /** The area's title, extent and data notes in the masthead and credits. */
 export function showAreaInfo(meta: AreaMeta) {
   $('#b-title').textContent = meta.title;
-  const span = (meta.coord.split('·')[1] || '').trim(); // meta.coord reads "lat lon · span"
+  const span = (meta.coord.split('·')[1] || '').trim(); // place span after the dot
   if (span) $('#b-sub').textContent = `${span} on real elevation and seafloor data`;
   $('#b-note').textContent = meta.note;
   document.title = `${meta.title}, Sunshine Coast`;
